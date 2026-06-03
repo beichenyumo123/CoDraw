@@ -6,7 +6,7 @@ import useSound from '../hooks/useSound';
 import ZoomControls from './ZoomControls';
 
 export default function InfiniteCanvas({ sendMessage, wsRef }) {
-  const { currentTool, brushColor, brushWidth, username, updateAlert } = useAppContext();
+  const { currentTool, currentStamp, userId, brushColor, brushWidth, username, updateAlert } = useAppContext();
   const { playPop, playChirp, playSplat } = useSound();
   const [zoomDisplay, setZoomDisplay] = useState('100%');
 
@@ -19,7 +19,7 @@ export default function InfiniteCanvas({ sendMessage, wsRef }) {
     zoomIn, zoomOut, zoomReset,
     downloadImage, updateCursor,
   } = useCanvas({
-    currentTool, brushColor, brushWidth, sendMessage,
+    currentTool, currentStamp, userId, brushColor, brushWidth, sendMessage,
     playPop, playChirp, playSplat,
     onZoomChange: handleZoomChange,
   });

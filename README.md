@@ -13,8 +13,8 @@
    ├──────────────────────────┬───────────────────┤
    │                          │  📱 NookPhone     │
    │   🎨 Figma级·无限画布    │  ┌──────────────┐ │
-   │   ┌──────────────────┐   │  │ ✏️ 🤚 📦 ⚪  │ │ ← 道具
-   │   │  · · · · · · · · │   │  │    🧽        │ │
+   │   ┌──────────────────┐   │  │ ✏️ 🤚 📦 ⚪  │ │ ← 道具 (6种)
+   │   │  · · · · · · · · │   │  │ 🏷️    🧽    │ │
    │   │  ·  ∞ 网格 · · · │   │  ├──────────────┤ │
    │   │  · · · · · · · · │   │  │ 💬 岛屿公屏  │ │ ← 聊天
    │   └──────────────────┘   │  │ 🐱 hi ~      │ │
@@ -31,7 +31,7 @@
 ```
 code/
 ├── backend/                  # Python FastAPI 后端
-│   ├── app.py                # WebSocket 协同 + REST + 聊天历史 + 自启前端
+│   ├── app.py                # WebSocket 协同 + REST + 聊天 + 自启前端
 │   └── requirements.txt      # fastapi, uvicorn
 │
 └── frontend/                 # React + Vite 前端
@@ -41,22 +41,23 @@ code/
         ├── main.jsx          # 入口 + animal-island-ui 样式
         ├── App.jsx           # 根布局
         ├── context/
-        │   └── AppContext.jsx    # 全局状态 (用户/工具/聊天/sendMessage)
+        │   └── AppContext.jsx    # 全局状态
         ├── hooks/
         │   ├── useSound.js       # Web Audio 音效
-        │   ├── useWebSocket.js   # WS 连接 + 消息路由 + 聊天
+        │   ├── useWebSocket.js   # WS 连接 + 消息路由
         │   └── useCanvas.js      # 无限画布 60fps 引擎
         ├── components/
-        │   ├── Banner.jsx        # 顶栏 + 折叠调色板 + 快捷色块 + 滚轮笔触
+        │   ├── Banner.jsx        # 顶栏 + 折叠调色板
         │   ├── JoinModal.jsx     # 登岛注册
         │   ├── InfiniteCanvas.jsx# 核心画布
-        │   ├── NookPhone.jsx     # 手机面板 (双层结构, 隐藏滚动条)
+        │   ├── NookPhone.jsx     # 手机面板
         │   ├── ChatPanel.jsx     # 💬 公屏聊天
-        │   ├── ToolSelector.jsx  # 5 种绘图道具
+        │   ├── ToolSelector.jsx  # 6 种道具 + 印章子选择器
         │   ├── UserList.jsx      # 在线村民
         │   └── ZoomControls.jsx  # 缩放控制
         └── data/
-            └── villagers.js      # 8 位角色 + 随机名字
+            ├── villagers.js      # 8 位角色 + 随机名字
+            └── stamps.js         # 8 个动森印章 (Canvas 2D 绘制)
 ```
 
 ---
@@ -65,17 +66,38 @@ code/
 
 ### 🎨 绘图工具
 
-| 工具        | 说明         |
-| ----------- | ------------ |
-| ✏️ 神奇铅笔 | 自由手绘     |
+| 工具 | 说明 |
+|------|------|
+| ✏️ 神奇铅笔 | 自由手绘 |
 | 🤚 拖拽抓手 | 平移无限画布 |
-| 📦 完美木框 | 绘制矩形     |
-| ⚪ 圆滚树洞 | 绘制圆形     |
-| 🧽 橡皮擦铲 | 擦除         |
+| 📦 完美木框 | 绘制矩形 |
+| ⚪ 圆滚树洞 | 绘制圆形 |
+| 🏷️ 手帐印章 | 点击/拖拽放置动森印章 |
+| 🧽 橡皮擦铲 | 擦除 |
 
 - **8 色调色板** — 焦糖褐 / 无人岛绿 / 向日葵黄 / 西瓜红 / 苍翠松针 / 清透浅蓝 / 樱花粉 / 风信子紫
 - **笔触 2~30 级** — 顶栏徽章悬停滚轮快捷调节
 - **折叠调色板** — 顶栏常驻 6 个快捷色块，点击 ▶ 丝滑展开/收起
+
+### 🏷️ 手帐印章 (Stamp Tool)
+
+选中印章道具后，下方自动展开 8 枚动森主题印章的图案选择器：
+
+| 印章 | 说明 |
+|------|------|
+| 🍃 树叶 | 叶形路径 + 茎线 |
+| ⭐ 星星 | 五角星几何 |
+| 🦴 化石 | 螺旋壳化石纹 |
+| 💰 铃钱 | 钱袋 + 白星 |
+| 🏠 小房子 | 三角顶 + 门 |
+| ❤️ 爱心 | 贝塞尔心形 |
+| 🎣 鱼 | 椭圆身 + 三角尾 |
+| 🦋 蝴蝶 | 四翼对称 |
+
+- **点击即放** — 在画布上点击放置 1 枚
+- **长按拖拽** — 按住拖拽连续放置，间隔 35 世界单位
+- **极简传输** — 每枚印章仅 80 字节 `{ type: 'stamp', stampId, x, y, scale, color }`
+- **Canvas 路径渲染** — 使用当前画笔颜色，全平台一致显示
 
 ### 🗺 无限画布
 
@@ -83,14 +105,16 @@ code/
 - Retina 2x 高清渲染
 - 60fps `requestAnimationFrame` 驱动
 - `ResizeObserver` + debounce 自适应，折叠手机不闪烁
-- 一键导出 1920×1080 全景 PNG
+- 一键导出 1920×1080 全景 PNG（跳过已撤销图形）
 
 ### 👥 多人协同
 
 - WebSocket 毫秒级双向广播
-- 光标追踪（世界坐标，任意缩放比精准可见）
+- **用户专属撤销 (P0)** — 每人只能撤销自己的图形，不影响他人
+- **软删除机制** — 撤销标记 `deleted: true`，历史可追溯
+- 光标追踪（世界坐标，不渲染自己的光标）
 - 他人绘制轨迹虚线实时显示
-- 撤销 / 清空全岛广播
+- 清空全岛广播
 - 4s 断线自动重连
 
 ### 💬 公屏聊天
@@ -151,78 +175,82 @@ cd frontend && npm install && npm run dev
 
 **客户端 → 服务端**
 
-| type           | 字段    | 说明                   |
-| -------------- | ------- | ---------------------- |
-| `add_shape`    | `shape` | 提交完成的图形         |
-| `drawing`      | `shape` | 绘制草稿 (`null`=结束) |
-| `cursor_move`  | `x, y`  | 光标世界坐标           |
-| `undo`         | —       | 撤销                   |
-| `clear`        | —       | 清空                   |
-| `chat_message` | `text`  | 聊天 (≤200 字符)       |
+| type | 字段 | 说明 |
+|------|------|------|
+| `add_shape` | `shape` | 提交完成的图形 |
+| `drawing` | `shape` | 绘制草稿 (`null`=结束) |
+| `cursor_move` | `x, y` | 光标世界坐标 |
+| `undo` | — | 撤销自己最后一笔 (P0) |
+| `clear` | — | 清空全部图形 |
+| `chat_message` | `text` | 聊天 (≤200 字符) |
 
 **服务端 → 客户端**
 
-| type                | 字段                                             | 说明         |
-| ------------------- | ------------------------------------------------ | ------------ |
-| `init`              | `history, chatHistory, users, yourId, yourColor` | 初始化       |
-| `user_list`         | `users`                                          | 在线用户变更 |
-| `broadcast_shape`   | `shape`                                          | 新图形       |
-| `broadcast_drawing` | `userId, shape`                                  | 他人草稿     |
-| `broadcast_cursor`  | `userId, x, y, color`                            | 光标         |
-| `broadcast_undo`    | `history`                                        | 撤销         |
-| `broadcast_clear`   | —                                                | 清空         |
-| `broadcast_chat`    | `message`                                        | 聊天         |
+| type | 字段 | 说明 |
+|------|------|------|
+| `init` | `history, chatHistory, users, yourId, yourColor` | 初始化 |
+| `user_list` | `users` | 在线用户变更 |
+| `broadcast_shape` | `entry` | 新图形 (`{shapeId, userId, shape, deleted}`) |
+| `broadcast_drawing` | `userId, shape` | 他人草稿 |
+| `broadcast_cursor` | `userId, x, y, color` | 光标 |
+| `broadcast_undo` | `shapeId` | 按 ID 撤销 (P0) |
+| `broadcast_clear` | — | 全量标记删除 |
+| `broadcast_chat` | `message` | 聊天 |
 
 ### 数据格式
 
 ```json
-// Shape
+// Pencil / Eraser
 { "type": "pencil", "points": [{"x":100,"y":200}], "color": "#4A3728", "width": 6 }
+
+// Rect / Circle
 { "type": "rect",   "x":100,"y":200,"w":150,"h":100, "color": "#7BC7A5", "width": 4 }
 { "type": "circle", "cx":300,"cy":400,"r":80, "color": "#F38181", "width": 5 }
 
+// Stamp (P1)
+{ "type": "stamp", "stampId": "leaf", "x": 500, "y": 300, "scale": 1.0, "color": "#4A3728" }
+
 // Chat
 { "userId":"abc", "username":"小润", "avatar":"🐱", "color":"#7BC7A5", "text":"hi!", "timestamp":1717400000000 }
+
+// History entry (with P0 undo metadata)
+{ "shapeId": "uuid", "userId": "user_abc", "shape": {...}, "deleted": false }
 ```
 
 ---
 
 ## 🧩 技术栈
 
-| 层    | 技术                                       |
-| ----- | ------------------------------------------ |
-| 前端  | React 19 (Hooks + Context)                 |
-| UI 库 | animal-island-ui v0.9.7 (Button)           |
-| 样式  | Tailwind CSS CDN + 自定义 CSS              |
-| 画布  | HTML5 Canvas 2D (Retina 2x + 世界坐标变换) |
-| 后端  | FastAPI + Uvicorn                          |
-| 实时  | WebSocket                                  |
-| 音效  | Web Audio API                              |
+| 层 | 技术 |
+|----|------|
+| 前端 | React 19 (Hooks + Context) |
+| UI 库 | animal-island-ui v0.9.7 (Button) |
+| 样式 | Tailwind CSS CDN + 自定义 CSS |
+| 画布 | HTML5 Canvas 2D (Retina 2x + 世界坐标变换 + Canvas 路径印章) |
+| 后端 | FastAPI + Uvicorn |
+| 实时 | WebSocket (双向毫秒级 + 软删除撤销) |
+| 音效 | Web Audio API |
 
 ---
 
 ## 🎮 操作
 
-| 操作           | 方式                               |
-| -------------- | ---------------------------------- |
-| 绘画           | 选择道具 → 左键拖拽                |
-| 平移           | **Space** + 拖拽 / 抓手工具 / 右键 |
-| 缩放           | 鼠标滚轮 (指针锚定)                |
-| 换色           | 顶栏色块 / ▶ 展开调色板            |
-| 笔触           | 悬停「笔触」滚轮 / 滑块            |
-| 撤销/清空/导出 | 画布底部按钮                       |
-| 收起手机       | 顶栏 📱                            |
-| 聊天           | 手机内输入 → Enter/发送            |
-| 静音           | 顶栏 🔊/🔇                         |
+| 操作 | 方式 |
+|------|------|
+| 绘画 | 选择道具 → 左键拖拽 |
+| 印章 | 选择 🏷️ → 选图案 → 点击放置 / 长按拖拽连续放 |
+| 平移 | **Space** + 拖拽 / 抓手工具 / 右键 |
+| 缩放 | 鼠标滚轮 (指针锚定) |
+| 换色 | 顶栏色块 / ▶ 展开调色板 |
+| 笔触 | 悬停「笔触」滚轮 / 滑块 |
+| 撤销 | 画布下方「↩️」(只撤销自己的) |
+| 清空/导出 | 画布底部按钮 |
+| 收起手机 | 顶栏 📱 |
+| 聊天 | 手机内输入 → Enter/发送 |
+| 静音 | 顶栏 🔊/🔇 |
 
 ---
 
 ## 📄 License
 
 MIT 🏝️
-
-P0 (现在做): 用户专属撤销 (修复协同 Bug)
-P1 (本周): 手帐印章系统 (回报率最高)
-P2 (下周): 实时打字气泡 + 快照增量日志
-P3 (v2.0): AOI 视口广播 + 梦境番地
-P4 (v3.0): 像素画网格 + 二进制压缩 + 音效协同

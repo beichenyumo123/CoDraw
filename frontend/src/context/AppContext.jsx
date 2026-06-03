@@ -13,6 +13,7 @@ export function AppProvider({ children }) {
 
   // 绘画状态
   const [currentTool, setCurrentTool] = useState('pencil');
+  const [currentStamp, setCurrentStamp] = useState('leaf');
   const [brushColor, setBrushColor] = useState('#4A3728');
   const [brushWidth, setBrushWidth] = useState(6);
 
@@ -53,6 +54,7 @@ export function AppProvider({ children }) {
 
     // 绘画
     currentTool, setCurrentTool,
+    currentStamp, setCurrentStamp,
     brushColor, setBrushColor,
     brushWidth, setBrushWidth,
 

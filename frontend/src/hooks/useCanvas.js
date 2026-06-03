@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { getHistoryList, getOtherDrawings, getCursors } from './useWebSocket';
+import { drawStamp } from '../data/stamps';
 
 // ==========================================
 // 绘制单一世界坐标系下的图形
@@ -25,6 +26,8 @@ function drawShape(targetCtx, shape) {
   } else if (shape.type === 'circle') {
     targetCtx.arc(shape.cx, shape.cy, shape.r, 0, 2 * Math.PI);
     targetCtx.stroke();
+  } else if (shape.type === 'stamp') {
+    drawStamp(targetCtx, shape.stampId, shape.x, shape.y, shape.scale || 1.0, shape.color);
   } else if (shape.type === 'eraser') {
     if (!shape.points || shape.points.length === 0) return;
     targetCtx.save();
@@ -56,6 +59,8 @@ function drawBubbleRect(drawingCtx, x, y, width, height, radius) {
 
 export default function useCanvas({
   currentTool,
+  currentStamp,
+  userId,
   brushColor,
   brushWidth,
   sendMessage,
@@ -74,11 +79,15 @@ export default function useCanvas({
 
   // Tool/brush refs (kept fresh via props)
   const currentToolRef = useRef(currentTool);
+  const currentStampRef = useRef(currentStamp);
+  const userIdRef = useRef(userId);
   const brushColorRef = useRef(brushColor);
   const brushWidthRef = useRef(brushWidth);
   const sendMessageRef = useRef(sendMessage);
 
   useEffect(() => { currentToolRef.current = currentTool; }, [currentTool]);
+  useEffect(() => { currentStampRef.current = currentStamp; }, [currentStamp]);
+  useEffect(() => { userIdRef.current = userId; }, [userId]);
   useEffect(() => { brushColorRef.current = brushColor; }, [brushColor]);
   useEffect(() => { brushWidthRef.current = brushWidth; }, [brushWidth]);
   useEffect(() => { sendMessageRef.current = sendMessage; }, [sendMessage]);
@@ -93,6 +102,8 @@ export default function useCanvas({
   const lastMouseX = useRef(0);
   const lastMouseY = useRef(0);
   const lastCursorSend = useRef(0);
+  const lastStampX = useRef(0);
+  const lastStampY = useRef(0);
 
   // Get canvas-relative coordinates
   const getCanvasCoords = useCallback((e) => {
@@ -180,6 +191,26 @@ export default function useCanvas({
         color: brushColorRef.current,
         width: brushWidthRef.current,
       };
+    } else if (tool === 'stamp') {
+      // 印章 — 点击 + 拖拽均可连续放置
+      const stampId = currentStampRef.current || 'leaf';
+      activeDrawing.current = {
+        type: 'stamp',
+        stampId,
+        x: startX.current,
+        y: startY.current,
+        scale: 1.0,
+        color: brushColorRef.current,
+        width: brushWidthRef.current,
+      };
+      // 发送第一枚
+      const sendMsg = sendMessageRef.current;
+      if (sendMsg) {
+        sendMsg({ type: 'add_shape', shape: activeDrawing.current });
+      }
+      // 记录最后放置位置，用于拖拽时控制间隔
+      lastStampX.current = startX.current;
+      lastStampY.current = startY.current;
     }
   }, [getCanvasCoords, screenToWorld, playPop, playSplat]);
 
@@ -228,9 +259,30 @@ export default function useCanvas({
       activeDrawing.current.cx = startX.current;
       activeDrawing.current.cy = startY.current;
       activeDrawing.current.r = Math.round(r);
+    } else if (tool === 'stamp') {
+      // 长按拖拽连续放置印章，间隔 35 世界单位
+      const dx = worldCoords.x - lastStampX.current;
+      const dy = worldCoords.y - lastStampY.current;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist >= 35 && sendMsg) {
+        lastStampX.current = worldCoords.x;
+        lastStampY.current = worldCoords.y;
+        const stamp = {
+          type: 'stamp',
+          stampId: currentStampRef.current || 'leaf',
+          x: worldCoords.x,
+          y: worldCoords.y,
+          scale: 1.0,
+          color: brushColorRef.current,
+          width: brushWidthRef.current,
+        };
+        sendMsg({ type: 'add_shape', shape: stamp });
+        // 更新 activeDrawing 用于本地预览
+        activeDrawing.current = stamp;
+      }
     }
 
-    if (sendMsg) {
+    if (sendMsg && tool !== 'stamp') {
       sendMsg({ type: 'drawing', shape: activeDrawing.current });
     }
   }, [getCanvasCoords, screenToWorld]);
@@ -247,6 +299,12 @@ export default function useCanvas({
 
     if (!isDrawing.current) return;
     isDrawing.current = false;
+
+    // 印章在 mousedown/mousemove 时已即时发送，这里只收尾
+    if (currentToolRef.current === 'stamp') {
+      activeDrawing.current = null;
+      return;
+    }
 
     const sendMsg = sendMessageRef.current;
     const ad = activeDrawing.current;
@@ -445,9 +503,11 @@ export default function useCanvas({
       ctx.restore(); // undo translate+scale
       ctx.restore();
 
-      // Other users' cursors (screen-space)
+      // Other users' cursors (screen-space) — skip own
       const cursorsMap = getCursors();
+      const myId = userIdRef.current;
       Object.values(cursorsMap).forEach((cursor) => {
+        if (cursor.userId === myId) return;
         if (Date.now() - cursor.lastUpdate > 5000) return;
 
         const sp = {
