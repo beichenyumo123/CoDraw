@@ -2,6 +2,7 @@ import { useAppContext } from '../context/AppContext';
 import useSound from '../hooks/useSound';
 import ToolSelector from './ToolSelector';
 import ChatPanel from './ChatPanel';
+import DreamPanel from './DreamPanel';
 import UserList from './UserList';
 
 export default function NookPhone() {
@@ -43,6 +44,12 @@ export default function NookPhone() {
 
           {/* 聊天区 */}
           <ChatPanel />
+
+          {/* 分隔线 */}
+          <div className="border-t-2 border-dashed border-[#4A3728]/20 my-2" />
+
+          {/* 梦境番地 */}
+          <DreamPanel />
 
           {/* 分隔线 */}
           <div className="border-t-2 border-dashed border-[#4A3728]/20 my-2" />

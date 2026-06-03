@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { getHistoryList, getOtherDrawings, getCursors, getTypingUsers } from './useWebSocket';
+import { getHistoryList, getOtherDrawings, getCursors, getTypingUsers, getDreamShapes } from './useWebSocket';
 import { drawStamp } from '../data/stamps';
 
 // ==========================================
@@ -68,6 +68,7 @@ export default function useCanvas({
   playChirp,
   playSplat,
   onZoomChange,
+  onAreaExport,
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -84,10 +85,12 @@ export default function useCanvas({
   const brushColorRef = useRef(brushColor);
   const brushWidthRef = useRef(brushWidth);
   const sendMessageRef = useRef(sendMessage);
+  const onAreaExportRef = useRef(onAreaExport);
 
   useEffect(() => { currentToolRef.current = currentTool; }, [currentTool]);
   useEffect(() => { currentStampRef.current = currentStamp; }, [currentStamp]);
   useEffect(() => { userIdRef.current = userId; }, [userId]);
+  useEffect(() => { onAreaExportRef.current = onAreaExport; }, [onAreaExport]);
   useEffect(() => { brushColorRef.current = brushColor; }, [brushColor]);
   useEffect(() => { brushWidthRef.current = brushWidth; }, [brushWidth]);
   useEffect(() => { sendMessageRef.current = sendMessage; }, [sendMessage]);
@@ -104,6 +107,10 @@ export default function useCanvas({
   const lastCursorSend = useRef(0);
   const lastStampX = useRef(0);
   const lastStampY = useRef(0);
+  const lastViewportSend = useRef(0);
+  const selectingArea = useRef(false); // 框选导出模式
+  const areaStart = useRef({ x: 0, y: 0 });
+  const areaEnd = useRef({ x: 0, y: 0 });
 
   // Get canvas-relative coordinates
   const getCanvasCoords = useCallback((e) => {
@@ -145,9 +152,19 @@ export default function useCanvas({
   // ========== Event Handlers ==========
 
   const onDrawStart = useCallback((e) => {
+    if (e.cancelable) e.preventDefault();
+
+    // 框选导出模式
+    if (selectingArea.current) {
+      const worldCoords = screenToWorld(getCanvasCoords(e).x, getCanvasCoords(e).y);
+      areaStart.current = worldCoords;
+      areaEnd.current = worldCoords;
+      isDrawing.current = true; // 复用 isDrawing 标记
+      return;
+    }
+
     const sendMsg = sendMessageRef.current;
     if (!sendMsg) return;
-    if (e.cancelable) e.preventDefault();
 
     const screenCoords = getCanvasCoords(e);
     lastMouseX.current = screenCoords.x;
@@ -216,6 +233,14 @@ export default function useCanvas({
 
   const onDrawMove = useCallback((e) => {
     if (e.cancelable) e.preventDefault();
+
+    // 框选导出：更新选区终点
+    if (selectingArea.current && isDrawing.current) {
+      const worldCoords = screenToWorld(getCanvasCoords(e).x, getCanvasCoords(e).y);
+      areaEnd.current = worldCoords;
+      return;
+    }
+
     const screenCoords = getCanvasCoords(e);
 
     // Panning
@@ -288,6 +313,19 @@ export default function useCanvas({
   }, [getCanvasCoords, screenToWorld]);
 
   const onDrawEnd = useCallback(() => {
+    // 框选导出完成
+    if (selectingArea.current && isDrawing.current) {
+      isDrawing.current = false;
+      selectingArea.current = false;
+      if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
+      const selW = Math.abs(areaEnd.current.x - areaStart.current.x);
+      const selH = Math.abs(areaEnd.current.y - areaStart.current.y);
+      if (selW > 5 && selH > 5) {
+        if (onAreaExportRef.current) onAreaExportRef.current();
+      }
+      return;
+    }
+
     if (isPanning.current) {
       isPanning.current = false;
       if (canvasRef.current) {
@@ -393,41 +431,163 @@ export default function useCanvas({
     }
   }, []);
 
-  // Download image
-  const downloadImage = useCallback((username) => {
+  // 动森风格相框 — 3 种风格，style: 0=经典 1=海洋 2=森林
+  // 动森相框 — 只画边框+装饰，不填充内容区（内容已先画好）
+  function drawFrame(ctx, w, h, username, style) {
+    const FW = 48;
+    const outerColors = ['#4A3728', '#2c5f7c', '#52734D'];
+
+    // 四边外框条
+    ctx.fillStyle = outerColors[style];
+    ctx.fillRect(0, 0, w, FW);               // 上
+    ctx.fillRect(0, h - FW, w, FW);           // 下
+    ctx.fillRect(0, FW, FW, h - FW * 2);      // 左
+    ctx.fillRect(w - FW, FW, FW, h - FW * 2); // 右
+
+    // 内边细线
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(FW, FW, w - FW * 2, h - FW * 2);
+
+    // 顶部装饰（画在边框区域内）
+    if (style === 0) {
+      const grad = ctx.createLinearGradient(FW, 0, w - FW, FW);
+      grad.addColorStop(0, '#F8D147');
+      grad.addColorStop(0.5, '#7BC7A5');
+      grad.addColorStop(1, '#F38181');
+      ctx.fillStyle = grad;
+      ctx.fillRect(FW, FW - 10, w - FW * 2, 10);
+    } else if (style === 1) {
+      ctx.fillStyle = '#7BC7A5';
+      for (let wx = FW; wx < w - FW; wx += 40) {
+        ctx.beginPath();
+        ctx.arc(wx + 20, FW - 2, 12, Math.PI, 0);
+        ctx.fill();
+      }
+    } else {
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      for (let lx = FW + 40; lx < w - FW; lx += 60) {
+        ctx.fillText('🌿', lx, FW - 6);
+      }
+    }
+
+    // 四角铆钉
+    [
+      [FW + 20, FW + 20], [w - FW - 20, FW + 20],
+      [FW + 20, h - FW - 20], [w - FW - 20, h - FW - 20],
+    ].forEach(([dx, dy]) => {
+      ctx.fillStyle = outerColors[style];
+      ctx.beginPath();
+      ctx.arc(dx, dy, 5.5, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(dx - 1.5, dy - 1.5, 2, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+
+    // 底部签名（在边框区域）
+    const sigY = h - FW + 20;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 20px "ZCOOL KuaiLe", "PingFang SC", sans-serif';
+    ctx.textAlign = 'center';
+    const titles = ['🏡 CoDraw 无人岛沙画', '🌊 CoDraw 海洋奇缘', '🌲 CoDraw 森林密语'];
+    ctx.fillText(titles[style], w / 2, sigY);
+    ctx.font = '13px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(`艺术家：${username}  ·  ${new Date().toLocaleDateString('zh-CN')}`, w / 2, sigY + 20);
+
+    // 角落小装饰
+    const corners = [['🍃', '🍃'], ['🐚', '🦀'], ['🍄', '🌰']];
+    ctx.font = '18px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(corners[style][0], FW + 12, FW + 40);
+    ctx.textAlign = 'right';
+    ctx.fillText(corners[style][1], w - FW - 12, h - FW - 6);
+  }
+
+  // Download image — 全景：内容缩放到相框内部，不遮挡
+  const downloadImage = useCallback((username, frameStyle = 0) => {
+    const FW = 48; // 相框宽度
     const history = getHistoryList();
+    const activeShapes = history.filter(e => !e.deleted && e.shape);
+
+    // 计算包围盒
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    activeShapes.forEach(({ shape }) => {
+      const pts = [];
+      if (shape.type === 'pencil' || shape.type === 'eraser') {
+        if (shape.points) shape.points.forEach(p => pts.push(p));
+      } else if (shape.type === 'stamp') {
+        pts.push({ x: shape.x, y: shape.y });
+      } else if (shape.type === 'rect') {
+        pts.push({ x: shape.x, y: shape.y });
+        pts.push({ x: shape.x + shape.w, y: shape.y + shape.h });
+      } else if (shape.type === 'circle') {
+        pts.push({ x: shape.cx - shape.r, y: shape.cy - shape.r });
+        pts.push({ x: shape.cx + shape.r, y: shape.cy + shape.r });
+      }
+      pts.forEach(p => {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      });
+    });
+
+    if (!isFinite(minX)) { minX = -960; minY = -540; maxX = 960; maxY = 540; }
+    const pad = 60;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const worldW = maxX - minX;
+    const worldH = maxY - minY;
+
+    const outW = 1920;
+    const outH = 1080;
+    // 内容区域（相框内部）
+    const innerW = outW - FW * 2;
+    const innerH = outH - FW * 2;
+    const scale = Math.min(innerW / worldW, innerH / worldH);
+    const offsetX = FW + (innerW - worldW * scale) / 2;
+    const offsetY = FW + (innerH - worldH * scale) / 2;
+
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = 1920;
-    tempCanvas.height = 1080;
+    tempCanvas.width = outW;
+    tempCanvas.height = outH;
     const tempCtx = tempCanvas.getContext('2d');
 
-    tempCtx.fillStyle = '#FAF6EB';
-    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    // 1. 整画布背景（外框色）
+    const frameColors = ['#4A3728', '#2c5f7c', '#52734D'];
+    tempCtx.fillStyle = frameColors[frameStyle];
+    tempCtx.fillRect(0, 0, outW, outH);
 
+    // 2. 内容区背景
+    tempCtx.fillStyle = '#FAF6EB';
+    tempCtx.fillRect(FW, FW, innerW, innerH);
+
+    // 3. 网格点
+    const gridSpacing = 30;
     tempCtx.fillStyle = '#cbd5e1';
-    for (let x = 12; x < tempCanvas.width; x += 24) {
-      for (let y = 12; y < tempCanvas.height; y += 24) {
+    const gx0 = Math.floor(minX / gridSpacing) * gridSpacing;
+    const gy0 = Math.floor(minY / gridSpacing) * gridSpacing;
+    for (let gx = gx0; gx <= maxX; gx += gridSpacing) {
+      for (let gy = gy0; gy <= maxY; gy += gridSpacing) {
         tempCtx.beginPath();
-        tempCtx.arc(x, y, 1.5, 0, 2 * Math.PI);
+        tempCtx.arc(offsetX + (gx - minX) * scale, offsetY + (gy - minY) * scale, 1.5, 0, 2 * Math.PI);
         tempCtx.fill();
       }
     }
 
+    // 4. 图形
     tempCtx.save();
-    tempCtx.translate(960, 540);
-    history.forEach((entry) => {
-      if (!entry.deleted && entry.shape) drawShape(tempCtx, entry.shape);
-    });
+    tempCtx.translate(offsetX - minX * scale, offsetY - minY * scale);
+    tempCtx.scale(scale, scale);
+    activeShapes.forEach(({ shape }) => drawShape(tempCtx, shape));
     tempCtx.restore();
 
-    tempCtx.fillStyle = '#4A3728';
-    tempCtx.font = 'bold 32px sans-serif';
-    tempCtx.fillText('🏡 CoDraw 无人岛无限全景沙画', 50, tempCanvas.height - 100);
-    tempCtx.font = '24px sans-serif';
-    tempCtx.fillText(`艺术家：${username}`, 50, tempCanvas.height - 50);
+    // 5. 相框装饰（边框条 + 铆钉 + 签名，只画边缘不覆盖内容）
+    drawFrame(tempCtx, outW, outH, username, frameStyle);
 
     if (playPop) playPop();
-
     const dataUrl = tempCanvas.toDataURL('image/png');
     const link = document.createElement('a');
     link.download = `CoDraw_全景沙画展_${Date.now()}.png`;
@@ -498,6 +658,40 @@ export default function useCanvas({
       // My active drawing
       if (activeDrawing.current) {
         drawShape(ctx, activeDrawing.current);
+      }
+
+      // Dream shapes overlay (梦境叠加层 — 半透明紫色调)
+      const dreams = getDreamShapes();
+      if (dreams.length > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        dreams.forEach(({ shape }) => {
+          if (shape) drawShape(ctx, shape);
+        });
+        ctx.restore();
+        // 梦境边界提示
+        ctx.save();
+        ctx.setLineDash([15, 10]);
+        ctx.strokeStyle = 'rgba(139, 92, 246, 0.3)';
+        ctx.lineWidth = 3 / zoom.current;
+        ctx.strokeRect(-5000, -5000, 10000, 10000);
+        ctx.restore();
+      }
+
+      // 框选导出：绘制选区矩形
+      if (selectingArea.current && isDrawing.current) {
+        const ax = Math.min(areaStart.current.x, areaEnd.current.x);
+        const ay = Math.min(areaStart.current.y, areaEnd.current.y);
+        const aw = Math.abs(areaEnd.current.x - areaStart.current.x);
+        const ah = Math.abs(areaEnd.current.y - areaStart.current.y);
+        ctx.save();
+        ctx.setLineDash([8, 4]);
+        ctx.strokeStyle = '#4A3728';
+        ctx.lineWidth = 2 / zoom.current;
+        ctx.strokeRect(ax, ay, aw, ah);
+        ctx.fillStyle = 'rgba(123, 199, 165, 0.15)';
+        ctx.fillRect(ax, ay, aw, ah);
+        ctx.restore();
       }
 
       ctx.restore(); // undo translate+scale
@@ -587,6 +781,23 @@ export default function useCanvas({
         ctx.restore();
       });
 
+      // AOI viewport sync (every 2s)
+      const sendMsg = sendMessageRef.current;
+      if (sendMsg && Date.now() - lastViewportSend.current > 2000) {
+        const w = canvas.width / 2;
+        const h = canvas.height / 2;
+        const leftWorld = -panX.current / zoom.current;
+        const topWorld = -panY.current / zoom.current;
+        const rightWorld = (w - panX.current) / zoom.current;
+        const bottomWorld = (h - panY.current) / zoom.current;
+        sendMsg({
+          type: 'viewport_update',
+          xmin: leftWorld, ymin: topWorld,
+          xmax: rightWorld, ymax: bottomWorld,
+        });
+        lastViewportSend.current = now;
+      }
+
       animFrameId = requestAnimationFrame(renderLoop);
     }
 
@@ -649,6 +860,80 @@ export default function useCanvas({
     };
   }, [resizeCanvas]);
 
+  // 框选导出：进入选择模式
+  const startAreaExport = useCallback(() => {
+    selectingArea.current = true;
+    if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
+    if (playPop) playPop();
+  }, [playPop]);
+
+  // 框选导出：渲染选中区域
+  const exportArea = useCallback((username, frameStyle = 0) => {
+    const FW = 48;
+    const history = getHistoryList();
+    const x1 = Math.min(areaStart.current.x, areaEnd.current.x);
+    const y1 = Math.min(areaStart.current.y, areaEnd.current.y);
+    const x2 = Math.max(areaStart.current.x, areaEnd.current.x);
+    const y2 = Math.max(areaStart.current.y, areaEnd.current.y);
+    const selW = x2 - x1;
+    const selH = y2 - y1;
+    if (selW < 5 || selH < 5) return;
+
+    const maxW = 1920 - FW * 2;
+    const maxH = 1080 - FW * 2;
+    const scale = Math.min(maxW / selW, maxH / selH, 4);
+    const innerW = Math.round(selW * scale);
+    const innerH = Math.round(selH * scale);
+    const outW = innerW + FW * 2;
+    const outH = innerH + FW * 2;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = outW;
+    tempCanvas.height = outH;
+    const tempCtx = tempCanvas.getContext('2d');
+
+    // 1. 外框背景
+    const frameColors = ['#4A3728', '#2c5f7c', '#52734D'];
+    tempCtx.fillStyle = frameColors[frameStyle];
+    tempCtx.fillRect(0, 0, outW, outH);
+
+    // 2. 内容区背景
+    tempCtx.fillStyle = '#FAF6EB';
+    tempCtx.fillRect(FW, FW, innerW, innerH);
+
+    // 3. 网格点
+    const gridSpacing = 30;
+    tempCtx.fillStyle = '#cbd5e1';
+    const gx0 = Math.floor(x1 / gridSpacing) * gridSpacing;
+    const gy0 = Math.floor(y1 / gridSpacing) * gridSpacing;
+    for (let gx = gx0; gx <= x2; gx += gridSpacing) {
+      for (let gy = gy0; gy <= y2; gy += gridSpacing) {
+        tempCtx.beginPath();
+        tempCtx.arc(FW + (gx - x1) * scale, FW + (gy - y1) * scale, 1, 0, 2 * Math.PI);
+        tempCtx.fill();
+      }
+    }
+
+    // 4. 图形
+    tempCtx.save();
+    tempCtx.translate(FW - x1 * scale, FW - y1 * scale);
+    tempCtx.scale(scale, scale);
+    history.forEach((entry) => {
+      if (!entry.deleted && entry.shape) drawShape(tempCtx, entry.shape);
+    });
+    tempCtx.restore();
+
+    // 5. 相框装饰
+    drawFrame(tempCtx, outW, outH, username, frameStyle);
+
+    if (playPop) playPop();
+    const dataUrl = tempCanvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = `CoDraw_框选沙画_${Date.now()}.png`;
+    link.href = dataUrl;
+    link.click();
+  }, [playPop]);
+
   return {
     canvasRef,
     containerRef,
@@ -656,6 +941,8 @@ export default function useCanvas({
     zoomOut,
     zoomReset,
     downloadImage,
+    startAreaExport,
+    exportArea,
     updateCursor,
   };
 }

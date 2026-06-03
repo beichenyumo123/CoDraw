@@ -7,6 +7,7 @@ import ZoomControls from './ZoomControls';
 
 export default function InfiniteCanvas({ sendMessage, wsRef }) {
   const { currentTool, currentStamp, userId, brushColor, brushWidth, username, updateAlert } = useAppContext();
+  const [frameStyle, setFrameStyle] = useState(0); // 0=经典 1=海洋 2=森林
   const { playPop, playChirp, playSplat } = useSound();
   const [zoomDisplay, setZoomDisplay] = useState('100%');
 
@@ -17,11 +18,12 @@ export default function InfiniteCanvas({ sendMessage, wsRef }) {
   const {
     canvasRef, containerRef,
     zoomIn, zoomOut, zoomReset,
-    downloadImage, updateCursor,
+    downloadImage, startAreaExport, exportArea, updateCursor,
   } = useCanvas({
     currentTool, currentStamp, userId, brushColor, brushWidth, sendMessage,
     playPop, playChirp, playSplat,
     onZoomChange: handleZoomChange,
+    onAreaExport: () => exportArea(username, frameStyle),
   });
 
   useEffect(() => {
@@ -40,7 +42,12 @@ export default function InfiniteCanvas({ sendMessage, wsRef }) {
   }
 
   function handleDownload() {
-    downloadImage(username);
+    downloadImage(username, frameStyle);
+  }
+
+  function handleAreaExport() {
+    updateAlert('✂️ 框选模式：在画布上拖拽矩形区域即可导出');
+    startAreaExport();
   }
 
   function handleReset() {
@@ -76,17 +83,35 @@ export default function InfiniteCanvas({ sendMessage, wsRef }) {
         <div className="flex gap-2">
           <Button type="default" size="small" onClick={handleUndo}
             onMouseDown={(e) => e.preventDefault()}>
-            ↩️ 撤销画笔
+            ↩️ 撤销
           </Button>
           <Button type="default" size="small" danger onClick={handleClear}
             onMouseDown={(e) => e.preventDefault()}>
-            🧹 铲平画纸
+            🧹 清空
           </Button>
         </div>
-        <Button type="primary" size="small" onClick={handleDownload}
-          onMouseDown={(e) => e.preventDefault()}>
-          📸 一键照相全景图
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {/* 相框风格选择 */}
+          <span className="text-[9px] font-black text-[#7d5b3f] hidden sm:inline">相框</span>
+          {['🏡', '🌊', '🌲'].map((icon, i) => (
+            <button key={i}
+              onClick={() => setFrameStyle(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              className={`w-6 h-6 rounded-lg border-2 text-xs transition-all ${
+                frameStyle === i ? 'bg-[#F8D147] border-[#4A3728] scale-110' : 'bg-white border-[#4A3728]/30 hover:border-[#4A3728]/60'
+              }`}
+              title={['经典', '海洋', '森林'][i]}
+            >{icon}</button>
+          ))}
+          <Button type="primary" size="small" onClick={handleDownload}
+            onMouseDown={(e) => e.preventDefault()}>
+            📸 全景
+          </Button>
+          <Button type="default" size="small" onClick={handleAreaExport}
+            onMouseDown={(e) => e.preventDefault()}>
+            ✂️ 框选
+          </Button>
+        </div>
       </div>
     </div>
   );

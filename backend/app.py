@@ -43,6 +43,8 @@ class ConnectionManager:
         self.active_connections: List[WebSocket] = []
         # 映射 WebSocket 连接到其对应的用户信息 { "userId": str, "username": str, "color": str, "avatar": str }
         self.user_info: Dict[WebSocket, Dict[str, str]] = {}
+        # AOI 视口缓存：{ websocket: { xmin, ymin, xmax, ymax } }
+        self.viewports: Dict[WebSocket, Dict[str, float]] = {}
 
     async def connect(
         self, websocket: WebSocket, user_id: str, username: str, color: str, avatar: str
@@ -63,19 +65,90 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
         if websocket in self.user_info:
             del self.user_info[websocket]
+        if websocket in self.viewports:
+            del self.viewports[websocket]
 
     def get_online_users(self) -> List[Dict[str, str]]:
         """获取当前所有在线用户的信息列表"""
         return list(self.user_info.values())
 
+    def _shape_in_viewport(self, shape: Dict, viewport: Dict) -> bool:
+        """检查图形是否在视口内（含 50% 缓冲区）"""
+        if not viewport:
+            return True  # 无 viewport → 全量广播
+        vw = viewport["xmax"] - viewport["xmin"]
+        vh = viewport["ymax"] - viewport["ymin"]
+        buf_x = vw * 0.5
+        buf_y = vh * 0.5
+        vx0 = viewport["xmin"] - buf_x
+        vx1 = viewport["xmax"] + buf_x
+        vy0 = viewport["ymin"] - buf_y
+        vy1 = viewport["ymax"] + buf_y
+
+        def _overlap(sx, sy):
+            return vx0 <= sx <= vx1 and vy0 <= sy <= vy1
+
+        st = shape.get("type", "")
+        if st in ("pencil", "eraser"):
+            pts = shape.get("points", [])
+            if not pts:
+                return False
+            # 检查是否有任意点在视口内
+            return any(_overlap(p["x"], p["y"]) for p in pts)
+        elif st == "stamp":
+            return _overlap(shape.get("x", 0), shape.get("y", 0))
+        elif st == "rect":
+            return _overlap(shape.get("x", 0), shape.get("y", 0))
+        elif st == "circle":
+            return _overlap(shape.get("cx", 0), shape.get("cy", 0))
+        return True  # 未知类型全量广播
+
+    def _cursor_in_viewport(self, x: float, y: float, viewport: Dict) -> bool:
+        """检查光标是否在视口内（含缓冲区）"""
+        if not viewport:
+            return True
+        vw = viewport["xmax"] - viewport["xmin"]
+        vh = viewport["ymax"] - viewport["ymin"]
+        buf_x = vw * 0.5
+        buf_y = vh * 0.5
+        return (viewport["xmin"] - buf_x <= x <= viewport["xmax"] + buf_x and
+                viewport["ymin"] - buf_y <= y <= viewport["ymax"] + buf_y)
+
     async def broadcast(self, message: Dict[str, Any], exclude: WebSocket = None):
-        """
-        并发广播消息：确保消息分发独立进行，实现真正的毫秒级超低延迟同步。
-        """
+        """并发广播（全局消息）"""
         tasks = []
         for connection in self.active_connections:
             if connection != exclude:
                 tasks.append(connection.send_json(message))
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def broadcast_aoi_shape(self, shape: Dict, exclude: WebSocket = None):
+        """按视口广播图形（仅推送给看得见的用户）"""
+        tasks = []
+        for conn in self.active_connections:
+            if conn == exclude:
+                continue
+            vp = self.viewports.get(conn)
+            if self._shape_in_viewport(shape, vp):
+                tasks.append(conn.send_json({"type": "broadcast_shape", "entry": shape}))
+        # 始终推送给无 viewport 的客户端（刚连接未同步）
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def broadcast_aoi_cursor(self, user_id: str, x: float, y: float,
+                                    username: str, avatar: str, color: str,
+                                    exclude: WebSocket = None):
+        """按视口广播光标"""
+        tasks = []
+        msg = {"type": "broadcast_cursor", "userId": user_id,
+               "username": username, "avatar": avatar, "color": color, "x": x, "y": y}
+        for conn in self.active_connections:
+            if conn == exclude:
+                continue
+            vp = self.viewports.get(conn)
+            if self._cursor_in_viewport(x, y, vp):
+                tasks.append(conn.send_json(msg))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -149,7 +222,7 @@ async def websocket_endpoint(
                         "deleted": False,
                     }
                     DRAWING_HISTORY.append(entry)
-                    await manager.broadcast({"type": "broadcast_shape", "entry": entry})
+                    await manager.broadcast_aoi_shape(entry)
 
             elif msg_type == "drawing":
                 shape = message.get("shape")
@@ -165,21 +238,20 @@ async def websocket_endpoint(
                 )
 
             elif msg_type == "cursor_move":
-                # 收到客户端的世界坐标光标，广播给其他人
                 x = message.get("x")
                 y = message.get("y")
-                await manager.broadcast(
-                    {
-                        "type": "broadcast_cursor",
-                        "userId": user_id,
-                        "username": username,
-                        "avatar": avatar,
-                        "color": avatar_color,
-                        "x": x,
-                        "y": y,
-                    },
-                    exclude=websocket,
+                await manager.broadcast_aoi_cursor(
+                    user_id, x, y, username, avatar, avatar_color, exclude=websocket
                 )
+
+            elif msg_type == "viewport_update":
+                # AOI：客户端同步视口范围
+                manager.viewports[websocket] = {
+                    "xmin": message.get("xmin", -5000),
+                    "ymin": message.get("ymin", -5000),
+                    "xmax": message.get("xmax", 5000),
+                    "ymax": message.get("ymax", 5000),
+                }
 
             elif msg_type == "typing":
                 # 打字状态广播（气泡提示）
@@ -259,6 +331,54 @@ async def root():
 async def health():
     """健康检查端点"""
     return {"status": "healthy"}
+
+
+# ----------------- 梦境番地 (Dream Address) -----------------
+
+import string as _string
+import random as _random
+
+# 梦境存档存储 { code: { shapes, chat, creator, created_at } }
+DREAMS: Dict[str, Dict[str, Any]] = {}
+
+def _gen_dream_code() -> str:
+    """生成 8 位梦境番地码（大写字母+数字）"""
+    chars = _string.ascii_uppercase + _string.digits
+    return ''.join(_random.choices(chars, k=8))
+
+
+@app.post("/dream/save")
+async def dream_save(data: Dict[str, Any]):
+    """保存当前画布为梦境番地，返回 8 位访问码"""
+    code = _gen_dream_code()
+    # 确保不重复
+    while code in DREAMS:
+        code = _gen_dream_code()
+    DREAMS[code] = {
+        "shapes": [e for e in DRAWING_HISTORY if not e.get("deleted", False)],
+        "chat": list(CHAT_HISTORY),
+        "creator": data.get("creator", "匿名村民"),
+        "created_at": int(asyncio.get_event_loop().time() * 1000),
+        "shapeCount": len([e for e in DRAWING_HISTORY if not e.get("deleted", False)]),
+    }
+    return {"code": code, "url": f"/dream/{code}"}
+
+
+@app.get("/dream/{code}")
+async def dream_load(code: str):
+    """加载梦境番地（只读）"""
+    dream = DREAMS.get(code)
+    if not dream:
+        return {"error": "梦境番地不存在", "code": code}, 404
+    return {
+        "code": code,
+        "creator": dream["creator"],
+        "created_at": dream["created_at"],
+        "shapeCount": dream["shapeCount"],
+        "shapes": dream["shapes"],
+        "chat": dream["chat"],
+        "readonly": True,
+    }
 
 
 # ----------------- 启动入口 -----------------

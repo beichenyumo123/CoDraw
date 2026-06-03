@@ -7,11 +7,15 @@ let otherDrawings = {};
 let cursors = {};
 let chatMessages = [];
 let typingUsers = {}; // { userId: { username, expiresAt } }
+let dreamShapes = []; // 梦境番地叠加层（仅本地渲染，不广播）
 
 export function getHistoryList() { return historyList; }
+export function setHistoryList(arr) { historyList = arr; }
 export function getOtherDrawings() { return otherDrawings; }
 export function getCursors() { return cursors; }
 export function getTypingUsers() { return typingUsers; }
+export function getDreamShapes() { return dreamShapes; }
+export function setDreamShapes(arr) { dreamShapes = arr; }
 
 export default function useWebSocket() {
   const {
