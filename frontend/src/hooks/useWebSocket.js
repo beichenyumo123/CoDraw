@@ -45,7 +45,8 @@ export default function useWebSocket() {
       } else if (type === 'user_list') {
         setOnlineUsers(message.users);
       } else if (type === 'broadcast_shape') {
-        historyList.push(message.shape);
+        // 新格式：entry { shapeId, userId, shape, deleted }
+        historyList.push(message.entry || { shape: message.shape, deleted: false });
       } else if (type === 'broadcast_drawing') {
         if (message.shape === null) {
           delete otherDrawings[message.userId];
@@ -66,9 +67,12 @@ export default function useWebSocket() {
           lastUpdate: Date.now(),
         };
       } else if (type === 'broadcast_undo') {
-        historyList = message.history;
+        // 按 shapeId 软删除（用户专属撤销）
+        const entry = historyList.find(e => e.shapeId === message.shapeId);
+        if (entry) entry.deleted = true;
       } else if (type === 'broadcast_clear') {
-        historyList = [];
+        // 全量标记删除（不再清空数组）
+        historyList.forEach(e => { e.deleted = true; });
         otherDrawings = {};
       } else if (type === 'broadcast_chat') {
         chatMessages.push(message.message);

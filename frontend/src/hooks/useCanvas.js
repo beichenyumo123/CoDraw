@@ -357,8 +357,8 @@ export default function useCanvas({
 
     tempCtx.save();
     tempCtx.translate(960, 540);
-    history.forEach((shape) => {
-      drawShape(tempCtx, shape);
+    history.forEach((entry) => {
+      if (!entry.deleted && entry.shape) drawShape(tempCtx, entry.shape);
     });
     tempCtx.restore();
 
@@ -419,9 +419,11 @@ export default function useCanvas({
         }
       }
 
-      // History shapes
+      // History shapes — skip deleted (user-specific undo)
       const history = getHistoryList();
-      history.forEach((shape) => drawShape(ctx, shape));
+      history.forEach((entry) => {
+        if (!entry.deleted && entry.shape) drawShape(ctx, entry.shape);
+      });
 
       // Other users' in-progress drawings (dashed)
       const drawings = getOtherDrawings();

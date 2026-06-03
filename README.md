@@ -65,13 +65,13 @@ code/
 
 ### 🎨 绘图工具
 
-| 工具 | 说明 |
-|------|------|
-| ✏️ 神奇铅笔 | 自由手绘 |
+| 工具        | 说明         |
+| ----------- | ------------ |
+| ✏️ 神奇铅笔 | 自由手绘     |
 | 🤚 拖拽抓手 | 平移无限画布 |
-| 📦 完美木框 | 绘制矩形 |
-| ⚪ 圆滚树洞 | 绘制圆形 |
-| 🧽 橡皮擦铲 | 擦除 |
+| 📦 完美木框 | 绘制矩形     |
+| ⚪ 圆滚树洞 | 绘制圆形     |
+| 🧽 橡皮擦铲 | 擦除         |
 
 - **8 色调色板** — 焦糖褐 / 无人岛绿 / 向日葵黄 / 西瓜红 / 苍翠松针 / 清透浅蓝 / 樱花粉 / 风信子紫
 - **笔触 2~30 级** — 顶栏徽章悬停滚轮快捷调节
@@ -151,27 +151,27 @@ cd frontend && npm install && npm run dev
 
 **客户端 → 服务端**
 
-| type | 字段 | 说明 |
-|------|------|------|
-| `add_shape` | `shape` | 提交完成的图形 |
-| `drawing` | `shape` | 绘制草稿 (`null`=结束) |
-| `cursor_move` | `x, y` | 光标世界坐标 |
-| `undo` | — | 撤销 |
-| `clear` | — | 清空 |
-| `chat_message` | `text` | 聊天 (≤200 字符) |
+| type           | 字段    | 说明                   |
+| -------------- | ------- | ---------------------- |
+| `add_shape`    | `shape` | 提交完成的图形         |
+| `drawing`      | `shape` | 绘制草稿 (`null`=结束) |
+| `cursor_move`  | `x, y`  | 光标世界坐标           |
+| `undo`         | —       | 撤销                   |
+| `clear`        | —       | 清空                   |
+| `chat_message` | `text`  | 聊天 (≤200 字符)       |
 
 **服务端 → 客户端**
 
-| type | 字段 | 说明 |
-|------|------|------|
-| `init` | `history, chatHistory, users, yourId, yourColor` | 初始化 |
-| `user_list` | `users` | 在线用户变更 |
-| `broadcast_shape` | `shape` | 新图形 |
-| `broadcast_drawing` | `userId, shape` | 他人草稿 |
-| `broadcast_cursor` | `userId, x, y, color` | 光标 |
-| `broadcast_undo` | `history` | 撤销 |
-| `broadcast_clear` | — | 清空 |
-| `broadcast_chat` | `message` | 聊天 |
+| type                | 字段                                             | 说明         |
+| ------------------- | ------------------------------------------------ | ------------ |
+| `init`              | `history, chatHistory, users, yourId, yourColor` | 初始化       |
+| `user_list`         | `users`                                          | 在线用户变更 |
+| `broadcast_shape`   | `shape`                                          | 新图形       |
+| `broadcast_drawing` | `userId, shape`                                  | 他人草稿     |
+| `broadcast_cursor`  | `userId, x, y, color`                            | 光标         |
+| `broadcast_undo`    | `history`                                        | 撤销         |
+| `broadcast_clear`   | —                                                | 清空         |
+| `broadcast_chat`    | `message`                                        | 聊天         |
 
 ### 数据格式
 
@@ -189,34 +189,40 @@ cd frontend && npm install && npm run dev
 
 ## 🧩 技术栈
 
-| 层 | 技术 |
-|----|------|
-| 前端 | React 19 (Hooks + Context) |
-| UI 库 | animal-island-ui v0.9.7 (Button) |
-| 样式 | Tailwind CSS CDN + 自定义 CSS |
-| 画布 | HTML5 Canvas 2D (Retina 2x + 世界坐标变换) |
-| 后端 | FastAPI + Uvicorn |
-| 实时 | WebSocket |
-| 音效 | Web Audio API |
+| 层    | 技术                                       |
+| ----- | ------------------------------------------ |
+| 前端  | React 19 (Hooks + Context)                 |
+| UI 库 | animal-island-ui v0.9.7 (Button)           |
+| 样式  | Tailwind CSS CDN + 自定义 CSS              |
+| 画布  | HTML5 Canvas 2D (Retina 2x + 世界坐标变换) |
+| 后端  | FastAPI + Uvicorn                          |
+| 实时  | WebSocket                                  |
+| 音效  | Web Audio API                              |
 
 ---
 
 ## 🎮 操作
 
-| 操作 | 方式 |
-|------|------|
-| 绘画 | 选择道具 → 左键拖拽 |
-| 平移 | **Space** + 拖拽 / 抓手工具 / 右键 |
-| 缩放 | 鼠标滚轮 (指针锚定) |
-| 换色 | 顶栏色块 / ▶ 展开调色板 |
-| 笔触 | 悬停「笔触」滚轮 / 滑块 |
-| 撤销/清空/导出 | 画布底部按钮 |
-| 收起手机 | 顶栏 📱 |
-| 聊天 | 手机内输入 → Enter/发送 |
-| 静音 | 顶栏 🔊/🔇 |
+| 操作           | 方式                               |
+| -------------- | ---------------------------------- |
+| 绘画           | 选择道具 → 左键拖拽                |
+| 平移           | **Space** + 拖拽 / 抓手工具 / 右键 |
+| 缩放           | 鼠标滚轮 (指针锚定)                |
+| 换色           | 顶栏色块 / ▶ 展开调色板            |
+| 笔触           | 悬停「笔触」滚轮 / 滑块            |
+| 撤销/清空/导出 | 画布底部按钮                       |
+| 收起手机       | 顶栏 📱                            |
+| 聊天           | 手机内输入 → Enter/发送            |
+| 静音           | 顶栏 🔊/🔇                         |
 
 ---
 
 ## 📄 License
 
 MIT 🏝️
+
+P0 (现在做): 用户专属撤销 (修复协同 Bug)
+P1 (本周): 手帐印章系统 (回报率最高)
+P2 (下周): 实时打字气泡 + 快照增量日志
+P3 (v2.0): AOI 视口广播 + 梦境番地
+P4 (v3.0): 像素画网格 + 二进制压缩 + 音效协同

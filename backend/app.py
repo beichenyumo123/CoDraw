@@ -136,8 +136,14 @@ async def websocket_endpoint(
             if msg_type == "add_shape":
                 shape = message.get("shape")
                 if shape:
-                    DRAWING_HISTORY.append(shape)
-                    await manager.broadcast({"type": "broadcast_shape", "shape": shape})
+                    entry = {
+                        "shapeId": str(uuid.uuid4()),
+                        "userId": user_id,
+                        "shape": shape,
+                        "deleted": False,
+                    }
+                    DRAWING_HISTORY.append(entry)
+                    await manager.broadcast({"type": "broadcast_shape", "entry": entry})
 
             elif msg_type == "drawing":
                 shape = message.get("shape")
@@ -170,11 +176,19 @@ async def websocket_endpoint(
                 )
 
             elif msg_type == "undo":
-                if DRAWING_HISTORY:
-                    DRAWING_HISTORY.pop()
-                    await manager.broadcast(
-                        {"type": "broadcast_undo", "history": DRAWING_HISTORY}
-                    )
+                # 用户专属撤销：只撤销当前用户创建的最后一个未删除图形
+                undone = False
+                for entry in reversed(DRAWING_HISTORY):
+                    if entry["userId"] == user_id and not entry.get("deleted", False):
+                        entry["deleted"] = True
+                        undone = True
+                        await manager.broadcast(
+                            {"type": "broadcast_undo", "shapeId": entry["shapeId"]}
+                        )
+                        break
+                if not undone:
+                    # 没有可撤销的 → 告诉该客户端（静默忽略）
+                    pass
 
             elif msg_type == "chat_message":
                 text = message.get("text", "").strip()
@@ -196,7 +210,9 @@ async def websocket_endpoint(
                     )
 
             elif msg_type == "clear":
-                DRAWING_HISTORY.clear()
+                # 标记全部为已删除（保留历史用于可能的恢复）
+                for entry in DRAWING_HISTORY:
+                    entry["deleted"] = True
                 await manager.broadcast({"type": "broadcast_clear"})
 
     except WebSocketDisconnect:
