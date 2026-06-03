@@ -11,7 +11,7 @@ export default function NookPhone() {
 
   return (
     <section
-      className="w-80 flex-shrink-0 flex flex-col transition-all duration-300"
+      className="flex-shrink-0 flex flex-col transition-all duration-300 overflow-hidden"
       style={{
         width: phoneCollapsed ? '0px' : '20rem',
         opacity: phoneCollapsed ? 0 : 1,
