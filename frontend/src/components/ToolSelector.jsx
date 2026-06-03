@@ -8,6 +8,7 @@ const TOOLS = [
   { id: 'rect', icon: '📦', label: '完美木框' },
   { id: 'circle', icon: '⚪', label: '圆滚树洞' },
   { id: 'stamp', icon: '🏷️', label: '手帐印章' },
+  { id: 'pixel', icon: '🎨', label: '像素画', colSpan: false },
   { id: 'eraser', icon: '🧽', label: '橡皮擦铲', colSpan: true },
 ];
 

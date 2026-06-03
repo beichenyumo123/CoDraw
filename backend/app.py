@@ -253,6 +253,21 @@ async def websocket_endpoint(
                     "ymax": message.get("ymax", 5000),
                 }
 
+            elif msg_type == "sfx":
+                # 音效协同广播
+                sound = message.get("sound", "pop")
+                tasks = []
+                for conn in manager.active_connections:
+                    if conn == websocket:
+                        continue
+                    tasks.append(conn.send_json({
+                        "type": "broadcast_sfx",
+                        "sound": sound,
+                        "userId": user_id,
+                    }))
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
             elif msg_type == "typing":
                 # 打字状态广播（气泡提示）
                 active = message.get("active", False)

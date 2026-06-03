@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { getHistoryList, getOtherDrawings, getCursors, getTypingUsers, getDreamShapes } from './useWebSocket';
 import { drawStamp } from '../data/stamps';
+import { buildPixelShape } from '../components/PixelPanel';
 
 // ==========================================
 // 绘制单一世界坐标系下的图形
@@ -14,12 +15,25 @@ function drawShape(targetCtx, shape) {
   targetCtx.lineJoin = 'round';
 
   if (shape.type === 'pencil') {
-    if (!shape.points || shape.points.length === 0) return;
-    targetCtx.moveTo(shape.points[0].x, shape.points[0].y);
-    for (let i = 1; i < shape.points.length; i++) {
-      targetCtx.lineTo(shape.points[i].x, shape.points[i].y);
+    // 支持 delta 编码（压缩格式）
+    if (shape.deltas && shape.start) {
+      let cx = shape.start.x, cy = shape.start.y;
+      targetCtx.moveTo(cx, cy);
+      for (let i = 0; i < shape.deltas.length; i++) {
+        cx += shape.deltas[i][0];
+        cy += shape.deltas[i][1];
+        targetCtx.lineTo(cx, cy);
+      }
+      targetCtx.stroke();
+    } else if (shape.points && shape.points.length > 0) {
+      targetCtx.moveTo(shape.points[0].x, shape.points[0].y);
+      for (let i = 1; i < shape.points.length; i++) {
+        targetCtx.lineTo(shape.points[i].x, shape.points[i].y);
+      }
+      targetCtx.stroke();
+    } else {
+      return;
     }
-    targetCtx.stroke();
   } else if (shape.type === 'rect') {
     targetCtx.rect(shape.x, shape.y, shape.w, shape.h);
     targetCtx.stroke();
@@ -28,17 +42,36 @@ function drawShape(targetCtx, shape) {
     targetCtx.stroke();
   } else if (shape.type === 'stamp') {
     drawStamp(targetCtx, shape.stampId, shape.x, shape.y, shape.scale || 1.0, shape.color);
+  } else if (shape.type === 'pixelart') {
+    // 像素画渲染：每像素 2 位 hex（00 = 透明，01-0c = 颜色索引）
+    const pw = shape.width || 16;
+    const ph = shape.height || 16;
+    const cs = shape.cellSize || 12;
+    const colors = shape.colors || [];
+    const hex = shape.pixels || '';
+    const total = pw * ph;
+    for (let i = 0; i < total; i++) {
+      const hi = i * 2;
+      if (hi + 1 >= hex.length) break;
+      const idx = parseInt(hex.substring(hi, hi + 2), 16);
+      if (idx > 0 && idx <= colors.length) {
+        const color = colors[idx - 1];
+        const px = shape.x + (i % pw) * cs;
+        const py = shape.y + Math.floor(i / pw) * cs;
+        targetCtx.fillStyle = color;
+        targetCtx.fillRect(px, py, cs, cs);
+      }
+    }
   } else if (shape.type === 'eraser') {
     if (!shape.points || shape.points.length === 0) return;
-    targetCtx.save();
-    targetCtx.globalCompositeOperation = 'destination-out';
+    // 用背景色覆盖（避免 destination-out 产生透明像素影响导出）
+    targetCtx.strokeStyle = '#FAF6EB';
     targetCtx.lineWidth = shape.width * 2;
     targetCtx.moveTo(shape.points[0].x, shape.points[0].y);
     for (let i = 1; i < shape.points.length; i++) {
       targetCtx.lineTo(shape.points[i].x, shape.points[i].y);
     }
     targetCtx.stroke();
-    targetCtx.restore();
   }
 }
 
@@ -228,6 +261,14 @@ export default function useCanvas({
       // 记录最后放置位置，用于拖拽时控制间隔
       lastStampX.current = startX.current;
       lastStampY.current = startY.current;
+    } else if (tool === 'pixel') {
+      // 像素画 — 点击即放置，使用 PixelPanel 的统一编码
+      const shape = buildPixelShape(startX.current, startY.current);
+      const sendMsg = sendMessageRef.current;
+      if (sendMsg) {
+        sendMsg({ type: 'add_shape', shape });
+      }
+      isDrawing.current = false;
     }
   }, [getCanvasCoords, screenToWorld, playPop, playSplat]);
 
@@ -307,7 +348,7 @@ export default function useCanvas({
       }
     }
 
-    if (sendMsg && tool !== 'stamp') {
+    if (sendMsg && tool !== 'stamp' && tool !== 'pixel') {
       sendMsg({ type: 'drawing', shape: activeDrawing.current });
     }
   }, [getCanvasCoords, screenToWorld]);
@@ -338,8 +379,8 @@ export default function useCanvas({
     if (!isDrawing.current) return;
     isDrawing.current = false;
 
-    // 印章在 mousedown/mousemove 时已即时发送，这里只收尾
-    if (currentToolRef.current === 'stamp') {
+    // 印章/像素画在 mousedown 时已发送，这里只收尾
+    if (currentToolRef.current === 'stamp' || currentToolRef.current === 'pixel') {
       activeDrawing.current = null;
       return;
     }
@@ -347,7 +388,23 @@ export default function useCanvas({
     const sendMsg = sendMessageRef.current;
     const ad = activeDrawing.current;
     if (sendMsg && ad) {
-      sendMsg({ type: 'add_shape', shape: ad });
+      // Delta 编码：铅笔笔画压缩（第一点绝对坐标，后续为相对偏移）
+      if (ad.type === 'pencil' && ad.points && ad.points.length > 1) {
+        const start = ad.points[0];
+        const deltas = [];
+        for (let i = 1; i < ad.points.length; i++) {
+          deltas.push([
+            Math.round(ad.points[i].x - ad.points[i - 1].x),
+            Math.round(ad.points[i].y - ad.points[i - 1].y),
+          ]);
+        }
+        sendMsg({
+          type: 'add_shape',
+          shape: { type: 'pencil', start, deltas, color: ad.color, width: ad.width },
+        });
+      } else {
+        sendMsg({ type: 'add_shape', shape: ad });
+      }
       sendMsg({ type: 'drawing', shape: null });
     }
     activeDrawing.current = null;

@@ -6,8 +6,10 @@ let historyList = [];
 let otherDrawings = {};
 let cursors = {};
 let chatMessages = [];
-let typingUsers = {}; // { userId: { username, expiresAt } }
+let typingUsers = {};
+let pendingSfx = []; // 音效协同队列 // { userId: { username, expiresAt } }
 let dreamShapes = []; // 梦境番地叠加层（仅本地渲染，不广播）
+let pixelState = { pixels: Array(256).fill(null), color: '#4A3728' }; // 像素画状态持久化
 
 export function getHistoryList() { return historyList; }
 export function setHistoryList(arr) { historyList = arr; }
@@ -16,6 +18,9 @@ export function getCursors() { return cursors; }
 export function getTypingUsers() { return typingUsers; }
 export function getDreamShapes() { return dreamShapes; }
 export function setDreamShapes(arr) { dreamShapes = arr; }
+export function consumePendingSfx() { const s = pendingSfx; pendingSfx = []; return s; }
+export function getPixelState() { return pixelState; }
+export function setPixelState(s) { pixelState = s; }
 
 export default function useWebSocket() {
   const {
@@ -80,6 +85,8 @@ export default function useWebSocket() {
         // 全量标记删除（不再清空数组）
         historyList.forEach(e => { e.deleted = true; });
         otherDrawings = {};
+      } else if (type === 'broadcast_sfx') {
+        pendingSfx.push(message.sound);
       } else if (type === 'broadcast_typing') {
         if (message.active) {
           typingUsers[message.userId] = {

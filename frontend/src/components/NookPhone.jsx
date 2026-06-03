@@ -2,11 +2,12 @@ import { useAppContext } from '../context/AppContext';
 import useSound from '../hooks/useSound';
 import ToolSelector from './ToolSelector';
 import ChatPanel from './ChatPanel';
+import PixelPanel from './PixelPanel';
 import DreamPanel from './DreamPanel';
 import UserList from './UserList';
 
 export default function NookPhone() {
-  const { updateAlert } = useAppContext();
+  const { updateAlert, currentTool } = useAppContext();
   const { playChirp } = useSound();
 
   function handleHomeClick() {
@@ -44,6 +45,9 @@ export default function NookPhone() {
 
           {/* 聊天区 */}
           <ChatPanel />
+
+          {/* 像素画编辑器 */}
+          {currentTool === 'pixel' && <PixelPanel />}
 
           {/* 分隔线 */}
           <div className="border-t-2 border-dashed border-[#4A3728]/20 my-2" />
