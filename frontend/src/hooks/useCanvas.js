@@ -281,8 +281,14 @@ export default function useCanvas({
 
   // Keyboard handlers
   const onKeyDown = useCallback((e) => {
-    if (e.code === 'Space' && e.target === document.body) {
+    if (e.code === 'Space') {
+      // 防止触发已聚焦按钮的 click 事件
       e.preventDefault();
+      e.stopPropagation();
+      // 移除任意按钮的焦点，避免后续空格误触
+      if (document.activeElement && document.activeElement.tagName === 'BUTTON') {
+        document.activeElement.blur();
+      }
       isSpacePressed.current = true;
       if (canvasRef.current) canvasRef.current.style.cursor = 'grab';
     }
@@ -517,13 +523,26 @@ export default function useCanvas({
     };
   }, [onDrawStart, onDrawMove, onDrawEnd, onWheel, onKeyDown, onKeyUp, resizeCanvas]);
 
-  // Observe container size changes
+  // Observe container size changes — debounce to avoid canvas flicker
+  // during CSS transitions (e.g. phone collapse 300ms animation).
+  // Each canvas.width/height assignment CLEARS the canvas, so we must
+  // only resize once at the END of the transition, not every frame.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const observer = new MutationObserver(() => resizeCanvas());
-    observer.observe(container.parentElement, { attributes: true, childList: false, subtree: false });
-    return () => observer.disconnect();
+    let debounceTimer = null;
+    const resizeObserver = new ResizeObserver(() => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        resizeCanvas();
+        debounceTimer = null;
+      }, 80);
+    });
+    resizeObserver.observe(container);
+    return () => {
+      resizeObserver.disconnect();
+      if (debounceTimer !== null) clearTimeout(debounceTimer);
+    };
   }, [resizeCanvas]);
 
   return {

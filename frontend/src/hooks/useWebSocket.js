@@ -5,6 +5,7 @@ import { useAppContext } from '../context/AppContext';
 let historyList = [];
 let otherDrawings = {};
 let cursors = {};
+let chatMessages = [];
 
 export function getHistoryList() { return historyList; }
 export function getOtherDrawings() { return otherDrawings; }
@@ -13,7 +14,7 @@ export function getCursors() { return cursors; }
 export default function useWebSocket() {
   const {
     userId, setMyColor, setOnlineUsers,
-    updateAlert, setWsRef,
+    updateAlert, setWsRef, setChatMessages, setSendMessage,
   } = useAppContext();
 
   const wsRef = useRef(null);
@@ -21,7 +22,6 @@ export default function useWebSocket() {
 
   const connect = useCallback((username, avatar) => {
     const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    // 开发时后端在 8000 端口
     const apiHost = import.meta.env.VITE_API_HOST || window.location.hostname;
     const apiPort = import.meta.env.VITE_API_PORT || '8000';
     const wsUrl = `${protocol}${apiHost}:${apiPort}/ws/${userId}?username=${encodeURIComponent(username)}&avatar=${encodeURIComponent(avatar)}`;
@@ -38,6 +38,8 @@ export default function useWebSocket() {
 
       if (type === 'init') {
         historyList = message.history;
+        chatMessages = message.chatHistory || [];
+        setChatMessages([...chatMessages]);
         setMyColor(message.yourColor);
         setOnlineUsers(message.users);
       } else if (type === 'user_list') {
@@ -68,6 +70,13 @@ export default function useWebSocket() {
       } else if (type === 'broadcast_clear') {
         historyList = [];
         otherDrawings = {};
+      } else if (type === 'broadcast_chat') {
+        chatMessages.push(message.message);
+        // 限制本地缓存
+        if (chatMessages.length > 100) {
+          chatMessages = chatMessages.slice(-100);
+        }
+        setChatMessages([...chatMessages]);
       }
     };
 
@@ -82,7 +91,16 @@ export default function useWebSocket() {
 
     wsRef.current = ws;
     setWsRef(ws);
-  }, [userId, setMyColor, setOnlineUsers, updateAlert, setWsRef]);
+    // 把 sendMessage 写入 context，供 ChatPanel 等子组件使用
+    const send = (msg) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(msg));
+        return true;
+      }
+      return false;
+    };
+    setSendMessage(() => send);
+  }, [userId, setMyColor, setOnlineUsers, updateAlert, setWsRef, setChatMessages]);
 
   const sendMessage = useCallback((msg) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {

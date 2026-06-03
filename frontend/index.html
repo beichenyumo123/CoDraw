@@ -46,6 +46,36 @@
         border: 2px solid #4A3728;
         box-shadow: 2px 2px 0px 0px #4A3728;
       }
+      /* 动森风格滚动条 */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #EAE4C9;
+        border-radius: 12px;
+        border: 2px solid #FAF6EB;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #7BC7A5;
+        border-radius: 12px;
+        border: 2px solid #4A3728;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #6ab392;
+      }
+      /* 隐藏滚动条但保留滚动能力（手机区域） */
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #7BC7A5 #EAE4C9;
+      }
     </style>
   </head>
   <body class="h-screen flex flex-col relative select-none">

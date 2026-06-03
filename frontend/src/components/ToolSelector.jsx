@@ -1,4 +1,5 @@
 import { useAppContext } from '../context/AppContext';
+import useSound from '../hooks/useSound';
 
 const TOOLS = [
   { id: 'pencil', icon: '✏️', label: '神奇铅笔' },
@@ -10,9 +11,10 @@ const TOOLS = [
 
 export default function ToolSelector() {
   const { currentTool, setCurrentTool } = useAppContext();
+  const { playPop } = useSound();
 
   return (
-    <div className="space-y-1 mt-3 flex-shrink-0">
+    <div className="space-y-1 mt-2 flex-shrink-0">
       <h4 className="text-[10px] font-black text-[#7d5b3f]">切换手持道具：</h4>
       <div className="grid grid-cols-2 gap-1.5">
         {TOOLS.map((tool) => {
@@ -20,7 +22,8 @@ export default function ToolSelector() {
           return (
             <button
               key={tool.id}
-              onClick={() => setCurrentTool(tool.id)}
+              onClick={() => { playPop(); setCurrentTool(tool.id); }}
+              onMouseDown={(e) => e.preventDefault()}
               className={`p-2 rounded-2xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition-transform ${
                 tool.colSpan ? 'col-span-2' : ''
               } ${

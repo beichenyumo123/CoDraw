@@ -19,6 +19,7 @@ export function AppProvider({ children }) {
   // 协作数据
   const [historyList, setHistoryList] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
   const [alertText, setAlertText] = useState(
     '✨ 新技术：使用【抓手工具】或【按住空格键】可无限拖拽/滚动沙滩！使用【鼠标滚轮】即可自由缩放视角！'
   );
@@ -27,8 +28,9 @@ export function AppProvider({ children }) {
   const [isMuted, setIsMuted] = useState(false);
   const [phoneCollapsed, setPhoneCollapsed] = useState(false);
 
-  // WebSocket 实例引用
+  // WebSocket 实例引用 + 发送函数（供子组件如 ChatPanel 使用）
   const [wsRef, setWsRef] = useState(null);
+  const [sendMessage, setSendMessage] = useState(() => () => false);
 
   const updateAlert = useCallback((text) => {
     setAlertText(text);
@@ -57,6 +59,7 @@ export function AppProvider({ children }) {
     // 协作
     historyList, setHistoryList,
     onlineUsers, setOnlineUsers,
+    chatMessages, setChatMessages,
     alertText, updateAlert,
 
     // UI
@@ -65,6 +68,7 @@ export function AppProvider({ children }) {
 
     // WebSocket
     wsRef, setWsRef,
+    sendMessage, setSendMessage,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

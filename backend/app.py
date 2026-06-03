@@ -24,6 +24,10 @@ app.add_middleware(
 # 全局存储所有已提交的历史图形列表 (所有点和坐标采用世界坐标系存储，确保在不同客户端的缩放/平移视图下完美同步)
 DRAWING_HISTORY: List[Dict[str, Any]] = []
 
+# 公屏聊天历史（保留最近 100 条）
+CHAT_HISTORY: List[Dict[str, Any]] = []
+MAX_CHAT_HISTORY = 100
+
 
 class ConnectionManager:
     """
@@ -105,11 +109,12 @@ async def websocket_endpoint(
     await manager.connect(websocket, user_id, username, avatar_color, avatar)
 
     try:
-        # 1. 建立连接后，向该客户端同步当前画板的历史图形和在线人员
+        # 1. 建立连接后，向该客户端同步当前画板的历史图形、在线人员、聊天记录
         await websocket.send_json(
             {
                 "type": "init",
                 "history": DRAWING_HISTORY,
+                "chatHistory": CHAT_HISTORY,
                 "users": manager.get_online_users(),
                 "yourId": user_id,
                 "yourColor": avatar_color,
@@ -169,6 +174,25 @@ async def websocket_endpoint(
                     DRAWING_HISTORY.pop()
                     await manager.broadcast(
                         {"type": "broadcast_undo", "history": DRAWING_HISTORY}
+                    )
+
+            elif msg_type == "chat_message":
+                text = message.get("text", "").strip()
+                if text and len(text) <= 200:
+                    chat_msg = {
+                        "userId": user_id,
+                        "username": username,
+                        "avatar": avatar,
+                        "color": avatar_color,
+                        "text": text,
+                        "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                    }
+                    CHAT_HISTORY.append(chat_msg)
+                    # 限制聊天记录数量（slice 赋值，不创建局部变量）
+                    if len(CHAT_HISTORY) > MAX_CHAT_HISTORY:
+                        CHAT_HISTORY[:] = CHAT_HISTORY[-MAX_CHAT_HISTORY:]
+                    await manager.broadcast(
+                        {"type": "broadcast_chat", "message": chat_msg}
                     )
 
             elif msg_type == "clear":

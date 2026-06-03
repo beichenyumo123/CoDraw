@@ -11,6 +11,10 @@ export default function useSound() {
     if (!ctxRef.current) {
       ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
     }
+    // 浏览器自动挂起策略：每次播放前确保 AudioContext 已恢复
+    if (ctxRef.current.state === 'suspended') {
+      ctxRef.current.resume();
+    }
   }, []);
 
   const playPop = useCallback(() => {
