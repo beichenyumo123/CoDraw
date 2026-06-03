@@ -6,10 +6,12 @@ let historyList = [];
 let otherDrawings = {};
 let cursors = {};
 let chatMessages = [];
+let typingUsers = {}; // { userId: { username, expiresAt } }
 
 export function getHistoryList() { return historyList; }
 export function getOtherDrawings() { return otherDrawings; }
 export function getCursors() { return cursors; }
+export function getTypingUsers() { return typingUsers; }
 
 export default function useWebSocket() {
   const {
@@ -74,13 +76,23 @@ export default function useWebSocket() {
         // 全量标记删除（不再清空数组）
         historyList.forEach(e => { e.deleted = true; });
         otherDrawings = {};
+      } else if (type === 'broadcast_typing') {
+        if (message.active) {
+          typingUsers[message.userId] = {
+            username: message.username,
+            expiresAt: Date.now() + 4000, // 4s 后自动过期
+          };
+        } else {
+          delete typingUsers[message.userId];
+        }
       } else if (type === 'broadcast_chat') {
         chatMessages.push(message.message);
-        // 限制本地缓存
         if (chatMessages.length > 100) {
           chatMessages = chatMessages.slice(-100);
         }
         setChatMessages([...chatMessages]);
+        // 收到聊天消息 → 清除该用户的打字状态
+        delete typingUsers[message.message.userId];
       }
     };
 

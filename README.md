@@ -117,6 +117,18 @@ code/
 - 清空全岛广播
 - 4s 断线自动重连
 
+### 💬 实时打字气泡 (P2)
+
+- 聊天框输入时，其他用户画布上该用户光标上方飘出 `...` 动森风格气泡
+- 3s 无输入自动消失，发送消息后立即清除
+- 轻量协议：`typing` 帧仅 60 字节
+
+### 📸 快照截断 (P2)
+
+- 新用户加入时只同步最近 300 条图形（`MAX_INIT_HISTORY`）
+- 避免数千条历史 JSON 导致加载卡顿
+- `init` 消息附带 `truncated` + `totalShapes` 字段
+
 ### 💬 公屏聊天
 
 - NookPhone 内嵌，消息气泡（自己绿底靠右 / 他人白底靠左）
@@ -183,12 +195,13 @@ cd frontend && npm install && npm run dev
 | `undo` | — | 撤销自己最后一笔 (P0) |
 | `clear` | — | 清空全部图形 |
 | `chat_message` | `text` | 聊天 (≤200 字符) |
+| `typing` | `active` | 打字状态 (P2) |
 
 **服务端 → 客户端**
 
 | type | 字段 | 说明 |
 |------|------|------|
-| `init` | `history, chatHistory, users, yourId, yourColor` | 初始化 |
+| `init` | `history, chatHistory, users, yourId, yourColor, truncated, totalShapes` | 初始化 (截断) |
 | `user_list` | `users` | 在线用户变更 |
 | `broadcast_shape` | `entry` | 新图形 (`{shapeId, userId, shape, deleted}`) |
 | `broadcast_drawing` | `userId, shape` | 他人草稿 |
@@ -196,6 +209,7 @@ cd frontend && npm install && npm run dev
 | `broadcast_undo` | `shapeId` | 按 ID 撤销 (P0) |
 | `broadcast_clear` | — | 全量标记删除 |
 | `broadcast_chat` | `message` | 聊天 |
+| `broadcast_typing` | `userId, active` | 打字气泡 (P2) |
 
 ### 数据格式
 

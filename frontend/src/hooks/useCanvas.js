@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { getHistoryList, getOtherDrawings, getCursors } from './useWebSocket';
+import { getHistoryList, getOtherDrawings, getCursors, getTypingUsers } from './useWebSocket';
 import { drawStamp } from '../data/stamps';
 
 // ==========================================
@@ -542,6 +542,48 @@ export default function useCanvas({
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'left';
         ctx.fillText(cursor.username, rx + 6, ry + 13);
+        ctx.restore();
+      });
+
+      // Typing bubbles — show "..." above typing users' cursors
+      const typingMap = getTypingUsers();
+      const now = Date.now();
+      Object.entries(typingMap).forEach(([uid, info]) => {
+        if (now > info.expiresAt) return; // expired
+        const cursor = cursorsMap[uid];
+        if (!cursor) return; // no recent cursor position
+        const sp = {
+          x: cursor.x * zoom.current + panX.current,
+          y: cursor.y * zoom.current + panY.current,
+        };
+        ctx.save();
+        // Bubble background
+        const bubbleW = 28;
+        const bubbleH = 16;
+        const bx = sp.x - bubbleW / 2;
+        const by = sp.y - 40;
+        ctx.fillStyle = '#FAF6EB';
+        ctx.strokeStyle = '#4A3728';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(bx + 6, by);
+        ctx.lineTo(bx + bubbleW - 6, by);
+        ctx.quadraticCurveTo(bx + bubbleW, by, bx + bubbleW, by + 6);
+        ctx.lineTo(bx + bubbleW, by + bubbleH - 6);
+        ctx.quadraticCurveTo(bx + bubbleW, by + bubbleH, bx + bubbleW - 6, by + bubbleH);
+        ctx.lineTo(bx + 6, by + bubbleH);
+        ctx.quadraticCurveTo(bx, by + bubbleH, bx, by + bubbleH - 6);
+        ctx.lineTo(bx, by + 6);
+        ctx.quadraticCurveTo(bx, by, bx + 6, by);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // "..." text
+        ctx.fillStyle = '#4A3728';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('...', sp.x, by + bubbleH / 2);
         ctx.restore();
       });
 

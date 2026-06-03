@@ -28,6 +28,9 @@ DRAWING_HISTORY: List[Dict[str, Any]] = []
 CHAT_HISTORY: List[Dict[str, Any]] = []
 MAX_CHAT_HISTORY = 100
 
+# 快照增量：新用户只同步最近 N 条图形（避免超大 init JSON）
+MAX_INIT_HISTORY = 300
+
 
 class ConnectionManager:
     """
@@ -109,11 +112,14 @@ async def websocket_endpoint(
     await manager.connect(websocket, user_id, username, avatar_color, avatar)
 
     try:
-        # 1. 建立连接后，向该客户端同步当前画板的历史图形、在线人员、聊天记录
+        # 1. 建立连接后，向该客户端同步画板（截断历史）、在线人员、聊天记录
+        recent_history = DRAWING_HISTORY[-MAX_INIT_HISTORY:] if len(DRAWING_HISTORY) > MAX_INIT_HISTORY else DRAWING_HISTORY
         await websocket.send_json(
             {
                 "type": "init",
-                "history": DRAWING_HISTORY,
+                "history": recent_history,
+                "truncated": len(DRAWING_HISTORY) > MAX_INIT_HISTORY,
+                "totalShapes": len(DRAWING_HISTORY),
                 "chatHistory": CHAT_HISTORY,
                 "users": manager.get_online_users(),
                 "yourId": user_id,
@@ -171,6 +177,19 @@ async def websocket_endpoint(
                         "color": avatar_color,
                         "x": x,
                         "y": y,
+                    },
+                    exclude=websocket,
+                )
+
+            elif msg_type == "typing":
+                # 打字状态广播（气泡提示）
+                active = message.get("active", False)
+                await manager.broadcast(
+                    {
+                        "type": "broadcast_typing",
+                        "userId": user_id,
+                        "username": username,
+                        "active": active,
                     },
                     exclude=websocket,
                 )

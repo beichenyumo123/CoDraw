@@ -9,12 +9,43 @@ export default function ChatPanel() {
   const [input, setInput] = useState('');
   const listRef = useRef(null);
   const inputRef = useRef(null);
+  const typingTimer = useRef(null);
 
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
   }, [chatMessages]);
+
+  // 打字气泡：输入变化时广播 typing 状态
+  function notifyTyping(active) {
+    sendMessage({ type: 'typing', active });
+  }
+
+  function handleInputChange(e) {
+    const val = e.target.value;
+    setInput(val);
+    if (val && !input) {
+      // 开始打字
+      notifyTyping(true);
+    }
+    // 重置空闲计时器
+    clearTimeout(typingTimer.current);
+    if (val) {
+      typingTimer.current = setTimeout(() => notifyTyping(false), 3000);
+    }
+  }
+
+  function handleSend() {
+    const text = input.trim();
+    if (!text || text.length > 200) return;
+    clearTimeout(typingTimer.current);
+    notifyTyping(false);
+    playPop();
+    sendMessage({ type: 'chat_message', text });
+    setInput('');
+    inputRef.current?.focus();
+  }
 
   function handleSend() {
     const text = input.trim();
@@ -76,7 +107,7 @@ export default function ChatPanel() {
           ref={inputRef}
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={handleInputChange}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSend(); } }}
           placeholder="说点什么..."
           maxLength={200}
