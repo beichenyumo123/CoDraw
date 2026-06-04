@@ -62,7 +62,6 @@ export default function InfiniteCanvas({ sendMessage, wsRef }) {
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full bg-[#FAF6EB]"
-          style={{ cursor: currentTool === 'hand' ? 'var(--ac-hand)' : 'var(--ac-crosshair)' }}
         />
         <ZoomControls
           zoomDisplay={zoomDisplay}

@@ -909,6 +909,9 @@ export default function useCanvas({
 
     resizeCanvas();
 
+    // 初始化光标样式
+    canvas.style.cursor = getToolCursor(currentToolRef.current);
+
     return () => {
       canvas.removeEventListener('mousedown', onDrawStart);
       canvas.removeEventListener('mousemove', onDrawMove);
@@ -921,7 +924,7 @@ export default function useCanvas({
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, [onDrawStart, onDrawMove, onDrawEnd, onWheel, onKeyDown, onKeyUp, resizeCanvas]);
+  }, [onDrawStart, onDrawMove, onDrawEnd, onWheel, onKeyDown, onKeyUp, resizeCanvas, getToolCursor]);
 
   // Observe container size changes — debounce to avoid canvas flicker
   // during CSS transitions (e.g. phone collapse 300ms animation).

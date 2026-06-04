@@ -411,51 +411,25 @@ if __name__ == "__main__":
     frontend_proc = None
 
     if FRONTEND_DIR.exists():
-        print("🚀 正在启动前端 Vite 开发服务器...")
         frontend_proc = subprocess.Popen(
             ["npm", "run", "dev"],
             cwd=str(FRONTEND_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
-        # 等 Vite 启动完成（最长等 15 秒）
-        deadline = time.time() + 15
-        started = False
-        if frontend_proc.stdout:
-            for line in frontend_proc.stdout:
-                print(f"  [vite] {line.rstrip()}")
-                if "Local:" in line or "localhost" in line:
-                    started = True
-                    break
-                if time.time() > deadline:
-                    break
-        if not started:
-            print("  ⚠️ Vite 可能还在启动中，请稍候...")
 
     def cleanup(signum=None, frame=None):
         if frontend_proc and frontend_proc.poll() is None:
-            print("\n🛬 正在关闭前端开发服务器...")
             frontend_proc.terminate()
             try:
                 frontend_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 frontend_proc.kill()
-        print("👋 再见！")
 
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 
-    print("=" * 60)
-    print("🖼️  CoDraw 实时多人【无限画布】协同服务器已全景启动！")
-    print("=" * 60)
-    print(f"   🎨 前端画布：http://localhost:5173")
-    print(f"   ⚙️  API 服务：http://127.0.0.1:8000")
-    print(f"   🔌 WebSocket：ws://127.0.0.1:8000/ws/{{user_id}}")
-    print("=" * 60)
-    print("按住空格键 + 拖拽即可在画布平移，滚轮自由缩放！")
-    print("按 Ctrl+C 同时关闭前端和后端。")
-    print("=" * 60)
+    print("🏝️  CoDraw 已启动  http://localhost:5173  |  Ctrl+C 退出")
 
     try:
         uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
