@@ -8,13 +8,13 @@ import {
   setReplayPlaying, setReplaySpeed,
 } from '../hooks/useCanvas';
 
-const SPEEDS = [10, 30, 60, 120];
+const SPEEDS = [2, 5, 10, 20];
 
 export default function TimelapsePanel() {
   const { timelapseActive, setTimelapseActive, updateAlert } = useAppContext();
   const { playChirp, playPop } = useSound();
   const [progress, setProgress] = useState({ current: 0, total: 0, playing: true, speed: 30 });
-  const [speedIdx, setSpeedIdx] = useState(1);
+  const [speedIdx, setSpeedIdx] = useState(1); // 默认 5x
   const rafRef = useRef(null);
   const sliderRef = useRef(null);
   const dragging = useRef(false);

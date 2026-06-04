@@ -6,19 +6,77 @@ import { setViewportCenterGetter } from './viewportState';
 
 // ===== 时间胶囊回放状态 =====
 let replaySnapshot = null;  // 快照数组（进入时锁定）
+let replayBounds = null;    // 累积包围盒 bounds[i] = {minX,minY,maxX,maxY} of [0..i]
 let replayIndex = 0;        // 当前播放到第几条
 let replayPlaying = true;   // 是否正在播放
-let replaySpeed = 30;       // 每秒推进条数
+let replaySpeed = 5;        // 每秒推进条数
 let replayLastTick = 0;     // 上次推进时间戳
+let replayTargetPanX = 0;   // 目标视口
+let replayTargetPanY = 0;
+let replayTargetZoom = 1;
+
+/** 计算单个 shape 的包围盒 */
+function shapeBounds(shape) {
+  if (!shape) return null;
+  if (shape.type === 'pencil' || shape.type === 'eraser') {
+    if (shape.points && shape.points.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of shape.points) {
+        if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y;
+      }
+      return { minX, minY, maxX, maxY };
+    }
+    if (shape.deltas && shape.start) {
+      let minX = shape.start.x, minY = shape.start.y, maxX = shape.start.x, maxY = shape.start.y;
+      let cx = shape.start.x, cy = shape.start.y;
+      for (const d of shape.deltas) { cx += d[0]; cy += d[1]; if (cx < minX) minX = cx; if (cy < minY) minY = cy; if (cx > maxX) maxX = cx; if (cy > maxY) maxY = cy; }
+      return { minX, minY, maxX, maxY };
+    }
+  } else if (shape.type === 'rect') {
+    return { minX: shape.x, minY: shape.y, maxX: shape.x + shape.w, maxY: shape.y + shape.h };
+  } else if (shape.type === 'circle') {
+    return { minX: shape.cx - shape.r, minY: shape.cy - shape.r, maxX: shape.cx + shape.r, maxY: shape.cy + shape.r };
+  } else if (shape.type === 'stamp') {
+    return { minX: shape.x - 20, minY: shape.y - 20, maxX: shape.x + 20, maxY: shape.y + 20 };
+  } else if (shape.type === 'pixelart') {
+    const pw = (shape.width || 16) * (shape.cellSize || 12);
+    const ph = (shape.height || 16) * (shape.cellSize || 12);
+    return { minX: shape.x, minY: shape.y, maxX: shape.x + pw, maxY: shape.y + ph };
+  }
+  return null;
+}
+
 export function enterTimelapse() {
   const all = getHistoryList();
   replaySnapshot = all.filter((e) => !e.deleted && e.shape);
   replayIndex = 0;
   replayPlaying = true;
   replayLastTick = 0;
+  replayTargetPanX = 0;
+  replayTargetPanY = 0;
+  replayTargetZoom = 1;
+  // 预计算累积包围盒
+  replayBounds = new Array(replaySnapshot.length);
+  let acc = null;
+  for (let i = 0; i < replaySnapshot.length; i++) {
+    const sb = shapeBounds(replaySnapshot[i].shape);
+    if (sb) {
+      if (!acc) {
+        acc = { ...sb };
+      } else {
+        if (sb.minX < acc.minX) acc.minX = sb.minX;
+        if (sb.minY < acc.minY) acc.minY = sb.minY;
+        if (sb.maxX > acc.maxX) acc.maxX = sb.maxX;
+        if (sb.maxY > acc.maxY) acc.maxY = sb.maxY;
+      }
+    }
+    replayBounds[i] = acc ? { ...acc } : null;
+  }
 }
 export function exitTimelapse() {
   replaySnapshot = null;
+  replayBounds = null;
   replayIndex = 0;
   replayPlaying = true;
 }
@@ -766,6 +824,29 @@ export default function useCanvas({
             replayLastTick = now;
           }
         }
+        // 自动适配视口：根据当前累积包围盒平滑调整 pan/zoom
+        if (replayBounds && replayIndex > 0) {
+          const bounds = replayBounds[replayIndex - 1];
+          if (bounds) {
+            const pad = 80;
+            const bw = bounds.maxX - bounds.minX + pad * 2;
+            const bh = bounds.maxY - bounds.minY + pad * 2;
+            if (bw > 0 && bh > 0) {
+              const targetZoom = Math.min(w / bw, h / bh, 3.0);
+              const cx = (bounds.minX + bounds.maxX) / 2;
+              const cy = (bounds.minY + bounds.maxY) / 2;
+              replayTargetZoom = Math.max(targetZoom, 0.15);
+              replayTargetPanX = w / 2 - cx * replayTargetZoom;
+              replayTargetPanY = h / 2 - cy * replayTargetZoom;
+            }
+          }
+        }
+        // 平滑插值（lerp 0.08）
+        panX.current += (replayTargetPanX - panX.current) * 0.08;
+        panY.current += (replayTargetPanY - panY.current) * 0.08;
+        zoom.current += (replayTargetZoom - zoom.current) * 0.08;
+        if (onZoomChange) onZoomChange(zoom.current);
+
         // 绘制快照中 0..replayIndex 的图形
         for (let i = 0; i < replayIndex; i++) {
           drawShape(ctx, replaySnapshot[i].shape);
