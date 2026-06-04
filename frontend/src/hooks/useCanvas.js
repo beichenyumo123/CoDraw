@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback } from 'react';
 import { getHistoryList, getOtherDrawings, getCursors, getTypingUsers, getDreamShapes } from './useWebSocket';
 import { drawStamp } from '../data/stamps';
 import { buildPixelShape } from '../components/PixelPanel';
+import { setViewportCenterGetter } from './viewportState';
 
 // ==========================================
 // 绘制单一世界坐标系下的图形
@@ -111,6 +112,21 @@ export default function useCanvas({
   const panY = useRef(0);
   const zoom = useRef(1.0);
 
+  // 暴露视口中心获取器供外部组件使用
+  useEffect(() => {
+    setViewportCenterGetter(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return { x: 0, y: 0 };
+      const w = canvas.width;
+      const h = canvas.height;
+      return {
+        x: (w / 2 - panX.current) / zoom.current,
+        y: (h / 2 - panY.current) / zoom.current,
+      };
+    });
+    return () => { setViewportCenterGetter(null); };
+  }, []);
+
   // Tool/brush refs (kept fresh via props)
   const currentToolRef = useRef(currentTool);
   const currentStampRef = useRef(currentStamp);
@@ -206,7 +222,7 @@ export default function useCanvas({
     const tool = currentToolRef.current;
     if (tool === 'hand' || isSpacePressed.current || e.button === 2) {
       isPanning.current = true;
-      if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
+      if (canvasRef.current) canvasRef.current.style.cursor = 'var(--ac-grabbing)';
       if (playPop) playPop();
       return;
     }
@@ -358,7 +374,7 @@ export default function useCanvas({
     if (selectingArea.current && isDrawing.current) {
       isDrawing.current = false;
       selectingArea.current = false;
-      if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
+      if (canvasRef.current) canvasRef.current.style.cursor = 'var(--ac-scissors)';
       const selW = Math.abs(areaEnd.current.x - areaStart.current.x);
       const selH = Math.abs(areaEnd.current.y - areaStart.current.y);
       if (selW > 5 && selH > 5) {
@@ -370,8 +386,7 @@ export default function useCanvas({
     if (isPanning.current) {
       isPanning.current = false;
       if (canvasRef.current) {
-        canvasRef.current.style.cursor =
-          (currentToolRef.current === 'hand' || isSpacePressed.current) ? 'grab' : 'crosshair';
+        canvasRef.current.style.cursor = isSpacePressed.current ? 'var(--ac-hand)' : getToolCursor(currentToolRef.current);
       }
       return;
     }
@@ -443,19 +458,32 @@ export default function useCanvas({
         document.activeElement.blur();
       }
       isSpacePressed.current = true;
-      if (canvasRef.current) canvasRef.current.style.cursor = 'grab';
+      if (canvasRef.current) canvasRef.current.style.cursor = 'var(--ac-hand)';
     }
+  }, []);
+
+  // 获取工具对应的 cursor 样式（必须在 onKeyUp 之前定义，避免 TDZ）
+  const getToolCursor = useCallback((tool) => {
+    const map = {
+      pencil: 'var(--ac-pencil)',
+      eraser: 'var(--ac-eraser)',
+      hand: 'var(--ac-hand)',
+      stamp: 'var(--ac-stamp)',
+      pixel: 'var(--ac-pixel)',
+      rect: 'var(--ac-crosshair)',
+      circle: 'var(--ac-crosshair)',
+    };
+    return map[tool] || 'var(--ac-crosshair)';
   }, []);
 
   const onKeyUp = useCallback((e) => {
     if (e.code === 'Space') {
       isSpacePressed.current = false;
       if (canvasRef.current) {
-        const tool = currentToolRef.current;
-        canvasRef.current.style.cursor = tool === 'hand' ? 'grab' : 'crosshair';
+        canvasRef.current.style.cursor = getToolCursor(currentToolRef.current);
       }
     }
-  }, []);
+  }, [getToolCursor]);
 
   // Zoom controls
   const zoomIn = useCallback(() => {
@@ -481,12 +509,12 @@ export default function useCanvas({
   // Update cursor when tool changes
   const updateCursor = useCallback((tool) => {
     if (!canvasRef.current) return;
-    if (tool === 'hand') {
-      canvasRef.current.style.cursor = 'grab';
+    if (isSpacePressed.current) {
+      canvasRef.current.style.cursor = 'var(--ac-hand)';
     } else {
-      canvasRef.current.style.cursor = isSpacePressed.current ? 'grab' : 'crosshair';
+      canvasRef.current.style.cursor = getToolCursor(tool);
     }
-  }, []);
+  }, [getToolCursor]);
 
   // 动森风格相框 — 3 种风格，style: 0=经典 1=海洋 2=森林
   // 动森相框 — 只画边框+装饰，不填充内容区（内容已先画好）
@@ -920,7 +948,7 @@ export default function useCanvas({
   // 框选导出：进入选择模式
   const startAreaExport = useCallback(() => {
     selectingArea.current = true;
-    if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
+    if (canvasRef.current) canvasRef.current.style.cursor = 'var(--ac-scissors)';
     if (playPop) playPop();
   }, [playPop]);
 

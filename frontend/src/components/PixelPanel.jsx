@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import useSound from '../hooks/useSound';
 import { getPixelState, setPixelState } from '../hooks/useWebSocket';
+import { getViewportCenter } from '../hooks/viewportState';
 
 const GRID_SIZE = 16;
 const PIXEL_COLORS = [
@@ -27,7 +28,6 @@ export function buildPixelShape(x, y) {
     colors: PIXEL_COLORS,
     x, y,
     color: ps.color,
-    width: 1,
   };
 }
 
@@ -111,10 +111,11 @@ export default function PixelPanel() {
   }
 
   function handlePlace() {
-    const shape = buildPixelShape(0, 0);
+    const center = getViewportCenter();
+    const shape = buildPixelShape(center.x, center.y);
     if (sendMessage) {
       sendMessage({ type: 'add_shape', shape });
-      updateAlert('🎨 像素画已放置到画布 (0,0)！');
+      updateAlert('🎨 像素画已放置到画布！');
       playPop();
     }
   }
@@ -128,38 +129,49 @@ export default function PixelPanel() {
 
   return (
     <div className="mt-2 flex-shrink-0">
-      <div className="border-t-2 border-dashed border-[#4A3728]/20 pt-2">
-        <h4 className="text-[10px] font-black text-[#7d5b3f] mb-1">🎨 像素画 ({GRID_SIZE}×{GRID_SIZE})</h4>
-        <div className="flex justify-center mb-1.5">
+      <div className="border-t-2 border-dashed border-[#9f927d]/40 pt-2">
+        <h4 className="text-[11px] font-black text-[#794f27] mb-1.5 tracking-wide"
+          style={{ letterSpacing: '0.04em' }}>
+          🎨 像素画 ({GRID_SIZE}×{GRID_SIZE})
+        </h4>
+        <div className="flex justify-center mb-2">
           <canvas ref={canvasRef}
             onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
             onContextMenu={handleContextMenu}
-            className="border-2 border-[#4A3728] rounded-lg cursor-crosshair"
+            className="border-2 border-[#9f927d] rounded-2xl"
+            style={{ cursor: 'var(--ac-crosshair)', boxShadow: '0 2px 4px 0 rgba(61,52,40,0.06)' }}
           />
         </div>
-        <div className="grid grid-cols-6 gap-1 mb-1.5">
+        <div className="grid grid-cols-6 gap-1 mb-2">
           {PIXEL_COLORS.map((color) => (
             <button key={color} onClick={() => changeColor(color)}
               onMouseDown={(e) => e.preventDefault()}
-              className={`w-7 h-7 rounded-lg border-2 transition-transform ${
-                pixelColor === color ? 'border-[#4A3728] scale-110 ring-1 ring-[#4A3728]' : 'border-[#4A3728]/30'
+              className={`w-7 h-7 rounded-xl border-2 transition-all duration-150 ${
+                pixelColor === color
+                  ? 'border-[#794f27] scale-110 ring-2 ring-[#ffcc00]'
+                  : 'border-[#c4b89e] hover:border-[#9f927d]'
               }`}
-              style={{ backgroundColor: color }}
+              style={{
+                backgroundColor: color,
+                ...(pixelColor === color ? { boxShadow: '0 2px 0 0 #bdaea0' } : {}),
+              }}
             />
           ))}
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-2">
           <button onClick={handleClear} onMouseDown={(e) => e.preventDefault()}
-            className="flex-1 px-2 py-1 bg-white border-2 border-[#4A3728] rounded-lg text-[9px] font-black hover:bg-rose-50">
+            className="flex-1 py-1.5 rounded-full border-2 border-[#9f927d] bg-[#f8f8f0] text-[10px] font-bold text-[#725d42] active:translate-y-0.5 transition-all duration-150"
+            style={{ boxShadow: '0 2px 4px 0 rgba(61,52,40,0.06)' }}>
             🗑️ 清空
           </button>
           <button onClick={handlePlace} onMouseDown={(e) => e.preventDefault()}
-            className="flex-1 px-2 py-1 bg-[#7BC7A5] border-2 border-[#4A3728] rounded-lg text-[9px] font-black text-white hover:bg-[#6ab392]">
+            className="flex-1 py-1.5 rounded-full border-2 border-[#9f927d] bg-[#ffcc00] text-[10px] font-bold text-[#794f27] active:translate-y-1 transition-all duration-150"
+            style={{ boxShadow: '0 4px 0 0 #bdaea0' }}>
             📍 放置
           </button>
         </div>
-        <p className="text-[8px] text-[#7d5b3f]/50 mt-1 text-center">
+        <p className="text-[8px] text-[#9f927d] mt-1.5 text-center font-medium">
           拖拽绘制 · 右键擦除
         </p>
       </div>
