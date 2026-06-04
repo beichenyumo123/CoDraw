@@ -4,6 +4,36 @@ import { drawStamp } from '../data/stamps';
 import { buildPixelShape } from '../components/PixelPanel';
 import { setViewportCenterGetter } from './viewportState';
 
+// ===== 时间胶囊回放状态 =====
+let replaySnapshot = null;  // 快照数组（进入时锁定）
+let replayIndex = 0;        // 当前播放到第几条
+let replayPlaying = true;   // 是否正在播放
+let replaySpeed = 30;       // 每秒推进条数
+let replayLastTick = 0;     // 上次推进时间戳
+export function enterTimelapse() {
+  const all = getHistoryList();
+  replaySnapshot = all.filter((e) => !e.deleted && e.shape);
+  replayIndex = 0;
+  replayPlaying = true;
+  replayLastTick = 0;
+}
+export function exitTimelapse() {
+  replaySnapshot = null;
+  replayIndex = 0;
+  replayPlaying = true;
+}
+export function isTimelapseActive() { return replaySnapshot !== null; }
+export function getReplayProgress() {
+  if (!replaySnapshot) return { current: 0, total: 0, playing: false, speed: replaySpeed };
+  return { current: replayIndex, total: replaySnapshot.length, playing: replayPlaying, speed: replaySpeed };
+}
+export function setReplayIndex(idx) {
+  if (!replaySnapshot) return;
+  replayIndex = Math.max(0, Math.min(idx, replaySnapshot.length));
+}
+export function setReplayPlaying(p) { replayPlaying = p; }
+export function setReplaySpeed(s) { replaySpeed = s; }
+
 // ==========================================
 // 绘制单一世界坐标系下的图形
 // ==========================================
@@ -202,6 +232,7 @@ export default function useCanvas({
 
   const onDrawStart = useCallback((e) => {
     if (e.cancelable) e.preventDefault();
+    if (replaySnapshot) return; // 回放模式禁止绘画
 
     // 框选导出模式
     if (selectingArea.current) {
@@ -722,31 +753,52 @@ export default function useCanvas({
         }
       }
 
-      // History shapes — skip deleted (user-specific undo)
-      const history = getHistoryList();
-      history.forEach((entry) => {
-        if (!entry.deleted && entry.shape) drawShape(ctx, entry.shape);
-      });
-
-      // Other users' in-progress drawings (dashed)
-      const drawings = getOtherDrawings();
-      Object.values(drawings).forEach((d) => {
-        if (d && d.shape) {
-          ctx.save();
-          ctx.globalAlpha = 0.5;
-          ctx.setLineDash([5, 5]);
-          drawShape(ctx, d.shape);
-          ctx.restore();
+      // History shapes — or timelapse replay
+      if (replaySnapshot) {
+        // 回放模式：自动推进 replayIndex
+        if (replayPlaying && replayIndex < replaySnapshot.length) {
+          const now = performance.now();
+          if (replayLastTick === 0) replayLastTick = now;
+          const elapsed = now - replayLastTick;
+          const advance = Math.floor(elapsed * replaySpeed / 1000);
+          if (advance > 0) {
+            replayIndex = Math.min(replayIndex + advance, replaySnapshot.length);
+            replayLastTick = now;
+          }
         }
-      });
-
-      // My active drawing
-      if (activeDrawing.current) {
-        drawShape(ctx, activeDrawing.current);
+        // 绘制快照中 0..replayIndex 的图形
+        for (let i = 0; i < replayIndex; i++) {
+          drawShape(ctx, replaySnapshot[i].shape);
+        }
+      } else {
+        // 正常模式
+        const history = getHistoryList();
+        history.forEach((entry) => {
+          if (!entry.deleted && entry.shape) drawShape(ctx, entry.shape);
+        });
       }
 
-      // Dream shapes overlay (梦境叠加层 — 半透明紫色调)
-      const dreams = getDreamShapes();
+      // Other users' in-progress drawings (dashed) — 隐藏于回放模式
+      if (!replaySnapshot) {
+        const drawings = getOtherDrawings();
+        Object.values(drawings).forEach((d) => {
+          if (d && d.shape) {
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.setLineDash([5, 5]);
+            drawShape(ctx, d.shape);
+            ctx.restore();
+          }
+        });
+
+        // My active drawing
+        if (activeDrawing.current) {
+          drawShape(ctx, activeDrawing.current);
+        }
+      }
+
+      // Dream shapes overlay (梦境叠加层 — 半透明紫色调) — 隐藏于回放模式
+      const dreams = replaySnapshot ? [] : getDreamShapes();
       if (dreams.length > 0) {
         ctx.save();
         ctx.globalAlpha = 0.55;
@@ -782,8 +834,8 @@ export default function useCanvas({
       ctx.restore(); // undo translate+scale
       ctx.restore();
 
-      // Other users' cursors (screen-space) — skip own
-      const cursorsMap = getCursors();
+      // Other users' cursors (screen-space) — skip own / skip replay
+      const cursorsMap = replaySnapshot ? {} : getCursors();
       const myId = userIdRef.current;
       Object.values(cursorsMap).forEach((cursor) => {
         if (cursor.userId === myId) return;
@@ -1032,5 +1084,12 @@ export default function useCanvas({
     startAreaExport,
     exportArea,
     updateCursor,
+    enterTimelapse,
+    exitTimelapse,
+    isTimelapseActive,
+    getReplayProgress,
+    setReplayIndex,
+    setReplayPlaying,
+    setReplaySpeed,
   };
 }

@@ -28,6 +28,7 @@ export function AppProvider({ children }) {
   // UI 状态
   const [isMuted, setIsMuted] = useState(false);
   const [phoneCollapsed, setPhoneCollapsed] = useState(false);
+  const [timelapseActive, setTimelapseActive] = useState(false);
 
   // WebSocket 实例引用 + 发送函数（供子组件如 ChatPanel 使用）
   const [wsRef, setWsRef] = useState(null);
@@ -67,6 +68,7 @@ export function AppProvider({ children }) {
     // UI
     isMuted, toggleMute,
     phoneCollapsed, togglePhone,
+    timelapseActive, setTimelapseActive,
 
     // WebSocket
     wsRef, setWsRef,

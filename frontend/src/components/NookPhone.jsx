@@ -4,6 +4,7 @@ import ToolSelector from './ToolSelector';
 import ChatPanel from './ChatPanel';
 import PixelPanel from './PixelPanel';
 import DreamPanel from './DreamPanel';
+import TimelapsePanel from './TimelapsePanel';
 import UserList from './UserList';
 
 export default function NookPhone() {
@@ -48,6 +49,12 @@ export default function NookPhone() {
 
           {/* 像素画编辑器 */}
           {currentTool === 'pixel' && <PixelPanel />}
+
+          {/* 分隔线 */}
+          <div className="border-t-2 border-dashed border-[#4A3728]/20 my-2" />
+
+          {/* 时间胶囊 */}
+          <TimelapsePanel />
 
           {/* 分隔线 */}
           <div className="border-t-2 border-dashed border-[#4A3728]/20 my-2" />
