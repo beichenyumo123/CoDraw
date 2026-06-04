@@ -30,6 +30,7 @@ export default function useWebSocket() {
 
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
+  const reconnectDelay = useRef(1000); // 指数退避：1s → 2s → 4s → 8s → 16s
 
   const connect = useCallback((username, avatar) => {
     const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -40,6 +41,7 @@ export default function useWebSocket() {
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
+      reconnectDelay.current = 1000; // 连接成功，重置退避
       updateAlert('🌳 成功抵达无人岛！按住空格键拖拽，或使用抓手工具拖拽，尽情平移吧！');
     };
 
@@ -108,8 +110,10 @@ export default function useWebSocket() {
     };
 
     ws.onclose = () => {
-      updateAlert('🚨 渡渡航空航班网络离线，正在重新呼叫服务器中...');
-      reconnectTimer.current = setTimeout(() => connect(username, avatar), 4000);
+      const delay = reconnectDelay.current;
+      reconnectDelay.current = Math.min(delay * 2, 16000); // 指数退避，上限 16s
+      updateAlert(`🚨 网络离线，${Math.round(delay / 1000)}s 后重连...`);
+      reconnectTimer.current = setTimeout(() => connect(username, avatar), delay);
     };
 
     ws.onerror = () => {
