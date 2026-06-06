@@ -242,6 +242,7 @@ export default function useCanvas({
   const lastMouseX = useRef(0);
   const lastMouseY = useRef(0);
   const lastCursorSend = useRef(0);
+  const lastDrawingSend = useRef(0);
   const lastStampX = useRef(0);
   const lastStampY = useRef(0);
   const lastViewportSend = useRef(0);
@@ -276,12 +277,13 @@ export default function useCanvas({
     const container = containerRef.current;
     if (!canvas || !container) return;
     const rect = container.getBoundingClientRect();
-    canvas.width = rect.width * 2;
-    canvas.height = rect.height * 2;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${rect.height}px`;
     const ctx = canvas.getContext('2d');
-    ctx.scale(2, 2);
+    ctx.scale(dpr, dpr);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
   }, []);
@@ -453,8 +455,9 @@ export default function useCanvas({
       }
     }
 
-    if (sendMsg && tool !== 'stamp' && tool !== 'pixel') {
+    if (sendMsg && tool !== 'stamp' && tool !== 'pixel' && now - lastDrawingSend.current > 50) {
       sendMsg({ type: 'drawing', shape: activeDrawing.current });
+      lastDrawingSend.current = now;
     }
   }, [getCanvasCoords, screenToWorld]);
 

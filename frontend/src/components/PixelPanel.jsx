@@ -58,10 +58,11 @@ export default function PixelPanel() {
     if (!canvas) return;
     const size = 240;
     const cell = size / GRID_SIZE;
-    canvas.width = size * 2; canvas.height = size * 2;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr; canvas.height = size * dpr;
     canvas.style.width = `${size}px`; canvas.style.height = `${size}px`;
     const ctx = canvas.getContext('2d');
-    ctx.scale(2, 2);
+    ctx.scale(dpr, dpr);
     ctx.fillStyle = '#FAF6EB';
     ctx.fillRect(0, 0, size, size);
     pixels.forEach((color, i) => {

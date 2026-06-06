@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 
 // 独立的模块级变量，不在 React state 中频繁更新，避免触发的 re-render 影响 canvas 性能
@@ -30,7 +30,10 @@ export default function useWebSocket() {
 
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
-  const reconnectDelay = useRef(1000); // 指数退避：1s → 2s → 4s → 8s → 16s
+  const reconnectDelay = useRef(1000); // 指数退避：1s → 2s → 4s → 8s → 10s
+  const reconnectCount = useRef(0);    // 已重连次数，上限 5
+  const [isConnected, setIsConnected] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   const connect = useCallback((username, avatar) => {
     const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -41,7 +44,10 @@ export default function useWebSocket() {
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
+      setIsConnected(true);
+      setIsReconnecting(false);
       reconnectDelay.current = 1000; // 连接成功，重置退避
+      reconnectCount.current = 0;    // 重置重连次数
       updateAlert('🌳 成功抵达无人岛！按住空格键拖拽，或使用抓手工具拖拽，尽情平移吧！');
     };
 
@@ -109,10 +115,23 @@ export default function useWebSocket() {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      setIsConnected(false);
+      wsRef.current = null;
+
+      // 正常关闭（code 1000）不触发重连；超过 5 次放弃
+      if (event.code === 1000 || reconnectCount.current >= 5) {
+        if (reconnectCount.current >= 5) {
+          updateAlert('❌ 重连失败次数过多，请检查网络后刷新页面');
+        }
+        return;
+      }
+
+      setIsReconnecting(true);
       const delay = reconnectDelay.current;
-      reconnectDelay.current = Math.min(delay * 2, 16000); // 指数退避，上限 16s
-      updateAlert(`🚨 网络离线，${Math.round(delay / 1000)}s 后重连...`);
+      reconnectDelay.current = Math.min(delay * 2, 10000); // 指数退避，上限 10s
+      reconnectCount.current += 1;
+      updateAlert(`🚨 网络离线，${Math.round(delay / 1000)}s 后重连（第 ${reconnectCount.current}/5 次）...`);
       reconnectTimer.current = setTimeout(() => connect(username, avatar), delay);
     };
 
@@ -147,11 +166,14 @@ export default function useWebSocket() {
       reconnectTimer.current = null;
     }
     if (wsRef.current) {
-      wsRef.current.close();
+      // 1000 = 正常关闭，不触发 onclose 中的重连逻辑
+      wsRef.current.close(1000);
       wsRef.current = null;
       setWsRef(null);
     }
+    setIsConnected(false);
+    setIsReconnecting(false);
   }, [setWsRef]);
 
-  return { connect, sendMessage, disconnect, wsRef };
+  return { connect, sendMessage, disconnect, wsRef, isConnected, isReconnecting };
 }
