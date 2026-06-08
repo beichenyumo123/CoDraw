@@ -31,6 +31,9 @@ MAX_CHAT_HISTORY = 100
 # 快照增量：新用户只同步最近 N 条图形（避免超大 init JSON）
 MAX_INIT_HISTORY = 300
 
+# 绘图历史上限：防止无限增长导致内存泄漏
+MAX_DRAWING_HISTORY = 10000
+
 
 class ConnectionManager:
     """
@@ -45,6 +48,8 @@ class ConnectionManager:
         self.user_info: Dict[WebSocket, Dict[str, str]] = {}
         # AOI 视口缓存：{ websocket: { xmin, ymin, xmax, ymax } }
         self.viewports: Dict[WebSocket, Dict[str, float]] = {}
+        # 并发广播信号量：限制同时进行中的广播任务数，防止洪峰积压
+        self._broadcast_sem = asyncio.Semaphore(100)
 
     async def connect(
         self, websocket: WebSocket, user_id: str, username: str, color: str, avatar: str
@@ -115,42 +120,45 @@ class ConnectionManager:
                 viewport["ymin"] - buf_y <= y <= viewport["ymax"] + buf_y)
 
     async def broadcast(self, message: Dict[str, Any], exclude: WebSocket = None):
-        """并发广播（全局消息）"""
-        tasks = []
-        for connection in self.active_connections:
-            if connection != exclude:
-                tasks.append(connection.send_json(message))
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        """并发广播（全局消息），带信号量背压防止洪峰"""
+        async with self._broadcast_sem:
+            tasks = []
+            for connection in self.active_connections:
+                if connection != exclude:
+                    tasks.append(connection.send_json(message))
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def broadcast_aoi_shape(self, shape: Dict, exclude: WebSocket = None):
-        """按视口广播图形（仅推送给看得见的用户）"""
-        tasks = []
-        for conn in self.active_connections:
-            if conn == exclude:
-                continue
-            vp = self.viewports.get(conn)
-            if self._shape_in_viewport(shape, vp):
-                tasks.append(conn.send_json({"type": "broadcast_shape", "entry": shape}))
-        # 始终推送给无 viewport 的客户端（刚连接未同步）
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        """按视口广播图形（仅推送给看得见的用户），带信号量背压"""
+        async with self._broadcast_sem:
+            tasks = []
+            for conn in self.active_connections:
+                if conn == exclude:
+                    continue
+                vp = self.viewports.get(conn)
+                if self._shape_in_viewport(shape, vp):
+                    tasks.append(conn.send_json({"type": "broadcast_shape", "entry": shape}))
+            # 始终推送给无 viewport 的客户端（刚连接未同步）
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def broadcast_aoi_cursor(self, user_id: str, x: float, y: float,
                                     username: str, avatar: str, color: str,
                                     exclude: WebSocket = None):
-        """按视口广播光标"""
-        tasks = []
-        msg = {"type": "broadcast_cursor", "userId": user_id,
-               "username": username, "avatar": avatar, "color": color, "x": x, "y": y}
-        for conn in self.active_connections:
-            if conn == exclude:
-                continue
-            vp = self.viewports.get(conn)
-            if self._cursor_in_viewport(x, y, vp):
-                tasks.append(conn.send_json(msg))
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        """按视口广播光标，带信号量背压"""
+        async with self._broadcast_sem:
+            tasks = []
+            msg = {"type": "broadcast_cursor", "userId": user_id,
+                   "username": username, "avatar": avatar, "color": color, "x": x, "y": y}
+            for conn in self.active_connections:
+                if conn == exclude:
+                    continue
+                vp = self.viewports.get(conn)
+                if self._cursor_in_viewport(x, y, vp):
+                    tasks.append(conn.send_json(msg))
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
 
 # 实例化连接管理器
@@ -201,9 +209,9 @@ async def websocket_endpoint(
             }
         )
 
-        # 2. 并发广播新村民加入的消息
-        await manager.broadcast(
-            {"type": "user_list", "users": manager.get_online_users()}
+        # 2. 并发广播新村民加入的消息（后台任务，不阻塞接收循环）
+        asyncio.create_task(
+            manager.broadcast({"type": "user_list", "users": manager.get_online_users()})
         )
 
         # 3. 循环监听客户端指令
@@ -222,26 +230,33 @@ async def websocket_endpoint(
                         "deleted": False,
                     }
                     DRAWING_HISTORY.append(entry)
-                    await manager.broadcast_aoi_shape(entry)
+                    # 限制绘图历史上限，防止内存泄漏
+                    if len(DRAWING_HISTORY) > MAX_DRAWING_HISTORY:
+                        DRAWING_HISTORY[:] = DRAWING_HISTORY[-MAX_DRAWING_HISTORY:]
+                    asyncio.create_task(manager.broadcast_aoi_shape(entry))
 
             elif msg_type == "drawing":
                 shape = message.get("shape")
-                await manager.broadcast(
-                    {
-                        "type": "broadcast_drawing",
-                        "userId": user_id,
-                        "username": username,
-                        "avatar": avatar,
-                        "shape": shape,
-                    },
-                    exclude=websocket,
+                asyncio.create_task(
+                    manager.broadcast(
+                        {
+                            "type": "broadcast_drawing",
+                            "userId": user_id,
+                            "username": username,
+                            "avatar": avatar,
+                            "shape": shape,
+                        },
+                        exclude=websocket,
+                    )
                 )
 
             elif msg_type == "cursor_move":
                 x = message.get("x")
                 y = message.get("y")
-                await manager.broadcast_aoi_cursor(
-                    user_id, x, y, username, avatar, avatar_color, exclude=websocket
+                asyncio.create_task(
+                    manager.broadcast_aoi_cursor(
+                        user_id, x, y, username, avatar, avatar_color, exclude=websocket
+                    )
                 )
 
             elif msg_type == "viewport_update":
@@ -256,29 +271,30 @@ async def websocket_endpoint(
             elif msg_type == "sfx":
                 # 音效协同广播
                 sound = message.get("sound", "pop")
-                tasks = []
-                for conn in manager.active_connections:
-                    if conn == websocket:
-                        continue
-                    tasks.append(conn.send_json({
-                        "type": "broadcast_sfx",
-                        "sound": sound,
-                        "userId": user_id,
-                    }))
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                asyncio.create_task(
+                    manager.broadcast(
+                        {
+                            "type": "broadcast_sfx",
+                            "sound": sound,
+                            "userId": user_id,
+                        },
+                        exclude=websocket,
+                    )
+                )
 
             elif msg_type == "typing":
                 # 打字状态广播（气泡提示）
                 active = message.get("active", False)
-                await manager.broadcast(
-                    {
-                        "type": "broadcast_typing",
-                        "userId": user_id,
-                        "username": username,
-                        "active": active,
-                    },
-                    exclude=websocket,
+                asyncio.create_task(
+                    manager.broadcast(
+                        {
+                            "type": "broadcast_typing",
+                            "userId": user_id,
+                            "username": username,
+                            "active": active,
+                        },
+                        exclude=websocket,
+                    )
                 )
 
             elif msg_type == "undo":
@@ -288,8 +304,10 @@ async def websocket_endpoint(
                     if entry["userId"] == user_id and not entry.get("deleted", False):
                         entry["deleted"] = True
                         undone = True
-                        await manager.broadcast(
-                            {"type": "broadcast_undo", "shapeId": entry["shapeId"]}
+                        asyncio.create_task(
+                            manager.broadcast(
+                                {"type": "broadcast_undo", "shapeId": entry["shapeId"]}
+                            )
                         )
                         break
                 if not undone:
@@ -311,20 +329,24 @@ async def websocket_endpoint(
                     # 限制聊天记录数量（slice 赋值，不创建局部变量）
                     if len(CHAT_HISTORY) > MAX_CHAT_HISTORY:
                         CHAT_HISTORY[:] = CHAT_HISTORY[-MAX_CHAT_HISTORY:]
-                    await manager.broadcast(
-                        {"type": "broadcast_chat", "message": chat_msg}
+                    asyncio.create_task(
+                        manager.broadcast(
+                            {"type": "broadcast_chat", "message": chat_msg}
+                        )
                     )
 
             elif msg_type == "clear":
                 # 标记全部为已删除（保留历史用于可能的恢复）
                 for entry in DRAWING_HISTORY:
                     entry["deleted"] = True
-                await manager.broadcast({"type": "broadcast_clear"})
+                asyncio.create_task(manager.broadcast({"type": "broadcast_clear"}))
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-        await manager.broadcast(
-            {"type": "user_list", "users": manager.get_online_users()}
+        asyncio.create_task(
+            manager.broadcast(
+                {"type": "user_list", "users": manager.get_online_users()}
+            )
         )
 
 
